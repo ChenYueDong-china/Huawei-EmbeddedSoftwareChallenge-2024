@@ -137,7 +137,7 @@ struct Strategy {
             while (!cacheMap.empty()) {
                 pair<const int, stack<PointWithChannelDeep>> &entry = *cacheMap.begin();
                 int totalDeep = entry.first;
-                stack<PointWithChannelDeep> sk;
+                stack<PointWithChannelDeep> &sk = entry.second;
                 PointWithChannelDeep poll = sk.top();
                 sk.pop();
                 if (poll.deep != dist[poll.startChannel][poll.vertexId]) {
@@ -330,7 +330,7 @@ struct Strategy {
         undoBusiness(business, originPath, {});
 
         vector<Point> path = SearchUtils::aStar(from, to, width,
-                                                 searchGraph, edges, vertices, minDistance);
+                                                searchGraph, edges, vertices, minDistance);
 
         redoBusiness(business, originPath, {});
         return path;
@@ -379,7 +379,7 @@ struct Strategy {
 
     unordered_map<int, int> getOriginEdgeIds(const vector<Point> &path) {
         unordered_map<int, int> result;
-        if (path.empty()) {
+        if (!path.empty()) {
             for (const Point &point: path) {
                 result[point.edgeId] = point.startChannelId;
             }
@@ -467,12 +467,9 @@ struct Strategy {
         int maxFailLength = 0;
         for (int i = 0; i < t; i++) {
             int curFailLength = 0;
-
             //邻接表
             vector<vector<Point>> curBusesResult = busesOriginResult;
-
             while (true) {
-
                 int failEdgeId = -1;
                 scanf("%d", &failEdgeId);
                 if (failEdgeId == -1) {
@@ -525,7 +522,6 @@ struct Strategy {
                     }
                     //todo 按顺序开始搜路径
                     unordered_map<int, vector<Point>> satisfyBusesResult;
-
                     for (int id: affectBusinesses) {
                         Business &business = buses[id];
                         vector<Point> path = aStarFindPath(business, curBusesResult[business.id]);
@@ -567,15 +563,19 @@ struct Strategy {
 //                            Collections.shuffle(affectBusinesses, rad);
                 }
 
-
             }
             reset();
-
-
         }
     }
 
 };
+
+inline void printError(const string &s) {
+
+    fprintf(stderr, "%s\n", s.c_str());
+    fflush(stderr);
+
+}
 
 int main() {
     //        freopen("in.txt", "r", stdin);
@@ -586,11 +586,14 @@ int main() {
         string path = "../data/";
         long long allCost = 0;
         for (int i = 0; i < 10; i++) {
+            unsigned long long start = runtime();
             freopen((path + to_string(i) + "/in.txt").c_str(), "r", stdin);
             freopen((path + to_string(i) + "/out.txt").c_str(), "w", stdout);
             strategy = {};
             strategy.init();
             strategy.mainLoop();
+            unsigned long long end = runtime();
+            printError("runTime:" + to_string(end - start));
         }
     } else {
         strategy.init();
