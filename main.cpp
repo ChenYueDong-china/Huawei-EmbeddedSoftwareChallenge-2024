@@ -184,20 +184,18 @@ int main() {
     //        freopen("in.txt", "r", stdin);
 //        freopen("out.txt", "w", stdout);
 //    SetConsoleOutputCP ( CP_UTF8 ) ;
+    static Strategy strategy;
     if (debug) {
-        //        freopen("in.txt", "r", stdin);
-//        freopen("out.txt", "w", stdout);
         string path = "../data/";
         long long allCost = 0;
         for (int i = 0; i < 10; i++) {
             freopen((path + to_string(i) + "/in.txt").c_str(), "r", stdin);
             freopen((path + to_string(i) + "/out.txt").c_str(), "w", stdout);
-            Strategy strategy{};
+            strategy = {};
             strategy.init();
             strategy.mainLoop();
         }
     } else {
-        static Strategy strategy;
         strategy.init();
         strategy.mainLoop();
     }
