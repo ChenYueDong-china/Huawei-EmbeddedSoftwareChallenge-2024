@@ -295,6 +295,14 @@ void init(){
 }
 
 int main(){
+
+//        freopen("in.txt", "r", stdin);
+//        freopen("out.txt", "w", stdout);
+
+    ifstream myCin("./in.txt");
+    ifstream myCout("./out.txt");
+    cin.rdbuf(myCin.rdbuf());//打开文件后定向到文件流，用完关闭文件
+    cout.rdbuf(myCout.rdbuf());//打开文件后定向到文件流，用完关闭文件
     Readcmd();
 
 //
