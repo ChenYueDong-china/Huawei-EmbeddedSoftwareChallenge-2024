@@ -110,8 +110,7 @@ struct Strategy {
         }
         graph.resize(N + 1);
         for (int i = 1; i <= M; i++) {
-            int ui;
-            int vi;
+            int ui, vi;
             scanf("%d %d", &ui, &vi);
             edges[i].from = ui;
             edges[i].to = vi;
@@ -124,12 +123,7 @@ struct Strategy {
         buses.resize(J + 1);
         busesOriginResult.resize(J + 1);
         for (int i = 1; i <= J; i++) {
-            int Src;
-            int Snk;
-            int S;
-            int L;
-            int R;
-            int V;
+            int Src, Snk, S, L, R, V;
             scanf("%d %d %d %d %d %d", &Src, &Snk, &S, &L, &R, &V);
             buses[i].id = i;
             buses[i].from = Src;
