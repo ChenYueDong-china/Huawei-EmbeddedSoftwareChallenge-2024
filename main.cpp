@@ -35,6 +35,7 @@ struct Edge {
     int to{};
     bool die{};
     int channel[CHANNEL_COUNT + 1]{};//0号不用
+    int freeChannelTable[CHANNEL_COUNT + 1][CHANNEL_COUNT + 1]{};//打表加快搜索速度
     Edge() {
         memset(channel, -1, sizeof(channel));
     }
@@ -249,6 +250,138 @@ struct Strategy {
             }
             return path;
         }
+
+        inline static vector<Point> aStar2(int start, int end, int width, const vector<NearEdge> searchGraph[MAX_N + 1],
+                                           const vector<Edge> &edges, const vector<Vertex> &vertices,
+                                           int minDistance[MAX_N + 1][MAX_N + 1]) {
+            static int dist[CHANNEL_COUNT + 1][MAX_N + 1]
+            , parentEdgeId[CHANNEL_COUNT + 1][MAX_N + 1]
+            , parentStartChannel[CHANNEL_COUNT + 1][MAX_N + 1]
+            , parentVertexId[CHANNEL_COUNT + 1][MAX_N + 1]
+            , timestamp[CHANNEL_COUNT + 1][MAX_N + 1]
+            , conflictPoints[CHANNEL_COUNT + 1][MAX_N + 1]
+            , timestampId = 1;//距离
+            timestampId++;
+            struct PointWithChannelDeep {
+                int vertexId;
+                int startChannel;
+                int deep;
+            };
+            static map<int, stack<PointWithChannelDeep>> cacheMap;
+            cacheMap.clear();
+            stack<PointWithChannelDeep> tmp;
+            for (int i = 1; i <= CHANNEL_COUNT; ++i) {
+                dist[i][start] = 0;
+                timestamp[i][start] = timestampId;
+                parentVertexId[i][start] = -1;//起始点为-1顶点
+                tmp.push({start, i, 0});
+            }
+            cacheMap[minDistance[start][end] * MAX_M] = tmp;
+            int endChannel = -1;
+            int count = 0;
+
+            while (!cacheMap.empty()) {
+                pair<const int, stack<PointWithChannelDeep>> &entry = *cacheMap.begin();
+                int totalDeep = entry.first;
+                stack<PointWithChannelDeep> &sk = entry.second;
+                PointWithChannelDeep poll = sk.top();
+                sk.pop();
+                if (poll.deep != dist[poll.startChannel][poll.vertexId]) {
+                    if (sk.empty()) {
+                        cacheMap.erase(totalDeep);
+                    }
+                    continue;
+                }
+                if (poll.vertexId == end) {
+                    endChannel = poll.startChannel;
+                    break;
+                }
+                int lastChannel = poll.startChannel;
+                for (const NearEdge &nearEdge: searchGraph[poll.vertexId]) {
+                    int next = nearEdge.to;
+                    if (parentVertexId[poll.startChannel][poll.vertexId] == next) {
+                        //防止重边
+                        continue;
+                    }
+                    const Edge &edge = edges[nearEdge.id];
+                    if (edge.die) {
+                        continue;
+                    }
+                    const int *freeChannelTable = edge.freeChannelTable[width];
+                    for (int i = 1; i <= freeChannelTable[0]; i++) {
+                        count++;
+                        int startChannel = freeChannelTable[i];
+                        //用来穷举
+                        int nextDistance = poll.deep + nearEdge.weight * MAX_M;
+                        if (startChannel != lastChannel) {
+                            if (poll.vertexId == start || vertices[poll.vertexId].curChangeCount <= 0) {
+                                //开始节点一定不需要转换,而且也转换不了
+                                continue;
+                            }
+                            if (vertices[poll.vertexId].die) {
+                                continue;//todo 预测，die之后没法转换,die之后curchangeCount可以直接为0
+                            }
+                            nextDistance += 1;
+                        }
+
+                        if (timestamp[startChannel][next] == timestampId &&
+                            dist[startChannel][next] <= nextDistance) {
+                            //访问过了，且距离没变得更近
+                            continue;
+                        }
+                        if (conflictPoints[startChannel][next]) {
+                            continue;//顶点重复
+                        }
+                        timestamp[startChannel][next] = timestampId;
+                        dist[startChannel][next] = nextDistance;
+                        parentStartChannel[startChannel][next] = poll.startChannel;
+                        parentEdgeId[startChannel][next] = nearEdge.id;
+                        parentVertexId[startChannel][next] = poll.vertexId;
+                        PointWithChannelDeep pointWithDeep{next, startChannel, nextDistance};
+                        nextDistance += MAX_M * minDistance[next][end];
+                        if (!cacheMap.count(nextDistance)) {
+                            cacheMap[nextDistance] = {};
+                        }
+                        cacheMap[nextDistance].push(pointWithDeep);
+                    }
+                }
+                if (sk.empty()) {
+                    cacheMap.erase(totalDeep);
+                }
+            }
+            if (endChannel == -1) {
+                return {};
+            }
+            vector<Point> path;
+            int cur = end;
+            int curStartChannel = endChannel;
+            while (cur != start) {
+                int edgeId = parentEdgeId[curStartChannel][cur];
+                path.push_back({edgeId, curStartChannel, curStartChannel + width - 1});
+                int startChannel = parentStartChannel[curStartChannel][cur];
+                cur = parentVertexId[curStartChannel][cur];
+                curStartChannel = startChannel;
+            }
+            reverse(path.begin(), path.end());
+            int from = start;
+            unordered_set<int> keys;
+            keys.insert(from);
+            for (Point point: path) {
+                Edge edge = edges[point.edgeId];
+                int to = edge.from == from ? edge.to : edge.from;
+                if (keys.count(to)) {
+                    //顶点重复，需要锁死这个通道进入得顶点
+                    //return  new ArrayList<>();
+                    conflictPoints[point.startChannelId][to] = true;
+                    path = aStar2(start, end, width, searchGraph, edges, vertices, minDistance);
+                    conflictPoints[point.startChannelId][to] = false;
+                    return path;
+                }
+                keys.insert(to);
+                from = to;
+            }
+            return path;
+        }
     };
 
 
@@ -321,22 +454,49 @@ struct Strategy {
                 }
             }
         }
+        for (int i = 1; i < edges.size(); i++) {
+            Edge &edge = edges[i];
+            //计算表
+            updateEdgeChannelTable(edge);
+        }
     }
 
+    unsigned long long time1 = 0;
+    unsigned long long time2 = 0;
+    unsigned long long time3 = 0;
+    unsigned long long time4 = 0;
+    unsigned long long time5 = 0;
+    unsigned long long time6 = 0;
+    unsigned long long time7 = 0;
+    unsigned long long time8 = 0;
+    unsigned long long time9 = 0;
+
     vector<Point> aStarFindPath(Business &business, vector<Point> &originPath) {
+        unsigned long long l = runtime();
         int from = business.from;
         int to = business.to;
         int width = business.needChannelLength;
         undoBusiness(business, originPath, {});
 
-        vector<Point> path = SearchUtils::aStar(from, to, width,
-                                                searchGraph, edges, vertices, minDistance);
 
+        vector<Point> path = SearchUtils::aStar2(from, to, width,
+                                                 searchGraph, edges, vertices, minDistance);
+
+//        vector<Point> path2 = SearchUtils::aStar(from, to, width,
+//                                                 searchGraph, edges, vertices, minDistance);
+//        assert (path.size() == path2.size());
+//        for (int i = 0; i < path.size(); i++) {
+//            assert(path[i].edgeId == path2[i].edgeId);
+//            assert(path[i].startChannelId == path2[i].startChannelId);
+//            assert(path[i].endChannelId == path2[i].endChannelId);
+//        }
         redoBusiness(business, originPath, {});
+        unsigned long long r = runtime();
+        time1 += r - l;
         return path;
     }
 
-    unordered_set<int> getOriginChangeV(Business &business, const vector<Point> &path) {
+    unordered_set<int> getOriginChangeV(const Business &business, const vector<Point> &path) {
         unordered_set<int> originChangeV;
         if (!path.empty()) {
             int from = business.from;
@@ -355,7 +515,7 @@ struct Strategy {
         return originChangeV;
     }
 
-    void redoBusiness(Business &business, vector<Point> &newPath, const vector<Point> &originPath) {
+    void redoBusiness(const Business &business, const vector<Point> &newPath, const vector<Point> &originPath) {
         unordered_set<int> originChangeV = getOriginChangeV(business, originPath);
         int from = business.from;
         int lastChannel = newPath[0].startChannelId;
@@ -365,6 +525,7 @@ struct Strategy {
             for (int j = point.startChannelId; j <= point.endChannelId; j++) {
                 edge.channel[j] = business.id;
             }
+            updateEdgeChannelTable(edge);
             int to = edge.from == from ? edge.to : edge.from;
             if (point.startChannelId != lastChannel
                 && !originChangeV.count(from)) {//包含可以复用资源
@@ -387,7 +548,33 @@ struct Strategy {
         return result;
     }
 
-    void undoBusiness(Business &business, vector<Point> &newPath, const vector<Point> &originPath) {
+    static void updateEdgeChannelTable(Edge &edge) {
+        const int *channel = edge.channel;
+        int (*freeChannelTable)[41] = edge.freeChannelTable;
+        int freeLength = 0;
+        for (int i = 1; i <= CHANNEL_COUNT; i++) {
+            freeChannelTable[i][0] = 0;//长度重新置为0
+        }
+        for (int i = 1; i <= CHANNEL_COUNT; i++) {
+            if (channel[i] == -1) {
+                if (channel[i] == channel[i - 1]) {
+                    freeLength++;
+                } else {
+                    freeLength = 1;
+                }
+            } else {
+                freeLength = 0;
+            }
+            if (freeLength > 0) {
+                for (int j = freeLength; j > 0; j--) {
+                    int start = i - j + 1;
+                    freeChannelTable[j][++freeChannelTable[j][0]] = start;
+                }
+            }
+        }
+    }
+
+    void undoBusiness(Business &business, const vector<Point> &newPath, const vector<Point> &originPath) {
         //变通道次数加回来
         unordered_set<int> originChangeV = getOriginChangeV(business, originPath);
         unordered_map<int, int> originEdgeIds = getOriginEdgeIds(originPath);
@@ -405,6 +592,7 @@ struct Strategy {
                 }
                 edge.channel[j] = -1;
             }
+            updateEdgeChannelTable(edge);
             int to = edge.from == from ? edge.to : edge.from;
             if (point.startChannelId != lastChannel && !originChangeV.count(from)) {
                 vertices[from].curChangeCount++;
@@ -421,10 +609,10 @@ struct Strategy {
         for (auto &entry: resultMap) {
             int id = entry.first;
             vector<Point> &newPath = entry.second;
-            Business business = buses[id];
+            Business &business = buses[id];
             printf("%d %d", business.id, int(newPath.size()));
             for (int j = 0; j < newPath.size(); j++) {
-                Point point = newPath[j];
+                Point &point = newPath[j];
                 printf("%d %d %d", point.edgeId, point.startChannelId, point.endChannelId);
                 if (j < int(newPath.size()) - 1) {
                     printf(" ");
@@ -437,6 +625,7 @@ struct Strategy {
     }
 
     void reset() {
+        unsigned long long l = runtime();
         //恢复边和顶点状态
         for (Edge &edge: edges) {
             edge.reset();
@@ -459,24 +648,35 @@ struct Strategy {
         for (int i = 1; i <= N; ++i) {
             searchGraph[i] = graph[i];
         }
+        for (int i = 1; i < edges.size(); i++) {
+            Edge &edge = edges[i];
+            //计算表
+            updateEdgeChannelTable(edge);
+        }
+        unsigned long long r = runtime();
+        time2 += r - l;
     }
 
     void mainLoop() {
         int t;
         scanf("%d", &t);
         int maxFailLength = 0;
+        unsigned long long int l1 = runtime();
         for (int i = 0; i < t; i++) {
             int curFailLength = 0;
             //邻接表
             vector<vector<Point>> curBusesResult = busesOriginResult;
             while (true) {
+
                 int failEdgeId = -1;
                 scanf("%d", &failEdgeId);
                 if (failEdgeId == -1) {
                     break;
                 }
+
                 assert(failEdgeId != 0);
                 //todo 求受影响业务
+                unsigned long long int l8 = runtime();
                 edges[failEdgeId].die = true;
                 vector<int> affectBusinesses;
                 unordered_set<int> ids;
@@ -492,7 +692,11 @@ struct Strategy {
                         affectBusinesses.push_back(busId);
                     }
                 }
-                sort(affectBusinesses.begin(), affectBusinesses.end());
+                sort(affectBusinesses.begin(), affectBusinesses.end(), [&](int aId, int bId) {
+                    return buses[aId] < buses[bId];
+                });
+                unsigned long long int r8 = runtime();
+                time9 += r8 - l8;
                 //todo 处理断边
                 curFailLength++;
                 maxFailLength = max(curFailLength, maxFailLength);
@@ -502,6 +706,7 @@ struct Strategy {
                 maxSearchTime = max(1, maxSearchTime);//至少给个1ms吧，小数据集多次搜索，不浪费
                 int startTime = int(runtime());
                 vector<int> tmp;
+                unsigned long long int l2 = runtime();
                 for (int id: affectBusinesses) {
                     Business &business = buses[id];
                     vector<Point> path = aStarFindPath(business, curBusesResult[business.id]);
@@ -511,42 +716,55 @@ struct Strategy {
                         business.die = true;//死了没得救
                     }
                 }
+                unsigned long long int r2 = runtime();
+                time4 += r2 - l2;
                 affectBusinesses = tmp;
-                vector<NearEdge> weightGraph[MAX_N + 1];
+                static vector<NearEdge> weightGraph[MAX_N + 1];
+                unsigned long long int l5 = runtime();
                 for (int j = 1; j <= N; j++) {
                     weightGraph[j] = searchGraph[j];
                 }
+                unsigned long long int r5 = runtime();
+                time6 += r5 - l5;
                 while (runtime() < startTime + maxSearchTime || iteration == 0) {
+                    unsigned long long int l6 = runtime();
                     for (int j = 1; j <= N; j++) {
                         shuffle(searchGraph[j].begin(), searchGraph[j].end(), rad);
                     }
+                    unsigned long long int r6 = runtime();
+                    time7 += r6 - l6;
                     //todo 按顺序开始搜路径
                     unordered_map<int, vector<Point>> satisfyBusesResult;
+                    unsigned long long int l3 = runtime();
                     for (int id: affectBusinesses) {
                         Business &business = buses[id];
                         vector<Point> path = aStarFindPath(business, curBusesResult[business.id]);
                         if (!path.empty()) {
-                            satisfyBusesResult[business.id] = path;
                             //变通道次数得减回去
                             redoBusiness(business, path, curBusesResult[business.id]);
+                            satisfyBusesResult[business.id] = std::move(path);
                         }
                     }
-
+                    unsigned long long int r3 = runtime();
+                    time5 += r3 - l3;
 //                            if (satisfyBusesResult.size() == affectBusinesses.size()) {
-
+                    unsigned long long int l7 = runtime();
                     for (auto &entry: satisfyBusesResult) {
                         int id = entry.first;
                         vector<Point> &newPath = entry.second;
                         Business &business = buses[id];
                         undoBusiness(business, curBusesResult[business.id], newPath);
-                        curBusesResult[business.id] = newPath;
+                        curBusesResult[business.id] = std::move(newPath);
                     }
+
                     printResult(satisfyBusesResult);
                     for (int id: affectBusinesses) {
                         if (!satisfyBusesResult.count(id)) {
                             buses[i].die = true;//死掉了，以后不调度
                         }
                     }
+                    unsigned long long int r7 = runtime();
+                    time8 += r7 - l7;
                     break;
 //                            }
 
@@ -566,6 +784,8 @@ struct Strategy {
             }
             reset();
         }
+        unsigned long long int r1 = runtime();
+        time3 += r1 - l1;
     }
 
 };
@@ -585,7 +805,7 @@ int main() {
     if (debug) {
         string path = "../data/";
         long long allCost = 0;
-        for (int i = 0; i < 10; i++) {
+        for (int i = 0; i < 1; i++) {
             unsigned long long start = runtime();
             freopen((path + to_string(i) + "/in.txt").c_str(), "r", stdin);
             freopen((path + to_string(i) + "/out.txt").c_str(), "w", stdout);
@@ -593,7 +813,13 @@ int main() {
             strategy.init();
             strategy.mainLoop();
             unsigned long long end = runtime();
-            printError("runTime:" + to_string(end - start));
+            printError("runTime:" + to_string(end - start) + ",aStarTime:" + to_string(strategy.time1) + ",resetTime:" +
+                       to_string(strategy.time2) + ",mainTime:" + to_string(strategy.time3) + ",while:" +
+                       to_string(strategy.time4) + ",aa:" + to_string(strategy.time5) + ",time6:" +
+                       to_string(strategy.time6) +
+                       ",time7:" + to_string(strategy.time7) + ",time8:" +
+                       to_string(strategy.time8) +
+                       ",time9:" + to_string(strategy.time9));
         }
     } else {
         strategy.init();
