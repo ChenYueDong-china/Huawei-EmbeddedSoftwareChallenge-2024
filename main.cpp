@@ -370,7 +370,7 @@ struct Strategy {
         return originChangeV;
     }
 
-    void redoBusiness(const Business &business, const vector<Point> &newPath, const vector<Point> &originPath) {
+    inline void redoBusiness(const Business &business, const vector<Point> &newPath, const vector<Point> &originPath) {
         unordered_set<int> originChangeV = getOriginChangeV(business, originPath);
         int from = business.from;
         int lastChannel = newPath[0].startChannelId;
@@ -378,6 +378,7 @@ struct Strategy {
             Edge &edge = edges[point.edgeId];
             //占用通道
             for (int j = point.startChannelId; j <= point.endChannelId; j++) {
+                assert(edge.channel[j] == -1 || edge.channel[j] == business.id);
                 edge.channel[j] = business.id;
             }
             updateEdgeChannelTable(edge);
@@ -393,7 +394,7 @@ struct Strategy {
         }
     }
 
-    unordered_map<int, int> getOriginEdgeIds(const vector<Point> &path) {
+    inline static unordered_map<int, int> getOriginEdgeIds(const vector<Point> &path) {
         unordered_map<int, int> result;
         if (!path.empty()) {
             for (const Point &point: path) {
@@ -403,7 +404,7 @@ struct Strategy {
         return result;
     }
 
-    static void updateEdgeChannelTable(Edge &edge) {
+    inline static void updateEdgeChannelTable(Edge &edge) {
         const int *channel = edge.channel;
         int (*freeChannelTable)[41] = edge.freeChannelTable;
         int freeLength = 0;
@@ -429,7 +430,7 @@ struct Strategy {
         }
     }
 
-    void undoBusiness(Business &business, const vector<Point> &newPath, const vector<Point> &originPath) {
+    inline void undoBusiness(const Business &business, const vector<Point> &newPath, const vector<Point> &originPath) {
         //变通道次数加回来
         unordered_set<int> originChangeV = getOriginChangeV(business, originPath);
         unordered_map<int, int> originEdgeIds = getOriginEdgeIds(originPath);
@@ -459,15 +460,15 @@ struct Strategy {
         }
     }
 
-    void printResult(unordered_map<int, vector<Point>> &resultMap) {
+    inline void printResult(const unordered_map<int, vector<Point>> &resultMap) {
         printf("%d\n", int(resultMap.size()));
         for (auto &entry: resultMap) {
             int id = entry.first;
-            vector<Point> &newPath = entry.second;
+            const vector<Point> &newPath = entry.second;
             Business &business = buses[id];
             printf("%d %d", business.id, int(newPath.size()));
             for (int j = 0; j < newPath.size(); j++) {
-                Point &point = newPath[j];
+                const Point &point = newPath[j];
                 printf("%d %d %d", point.edgeId, point.startChannelId, point.endChannelId);
                 if (j < int(newPath.size()) - 1) {
                     printf(" ");
@@ -492,7 +493,7 @@ struct Strategy {
             bus.reset();
         }
         for (int i = 1; i < busesOriginResult.size(); i++) {
-            vector<Point> result = busesOriginResult[i];
+            vector<Point> &result = busesOriginResult[i];
             for (const Point &point: result) {
                 //只需要占用通道，顶点变换能力不需要，最初没有
                 for (int j = point.startChannelId; j <= point.endChannelId; j++) {
@@ -571,9 +572,9 @@ struct Strategy {
                         business.die = true;//死了没得救
                     }
                 }
+                affectBusinesses = std::move(tmp);
                 unsigned long long int r2 = runtime();
                 time4 += r2 - l2;
-                affectBusinesses = tmp;
                 static vector<NearEdge> weightGraph[MAX_N + 1];
                 unsigned long long int l5 = runtime();
                 for (int j = 1; j <= N; j++) {
@@ -604,12 +605,12 @@ struct Strategy {
                     time5 += r3 - l3;
 //                            if (satisfyBusesResult.size() == affectBusinesses.size()) {
                     unsigned long long int l7 = runtime();
-                    for (auto &entry: satisfyBusesResult) {
+                    for (const auto &entry: satisfyBusesResult) {
                         int id = entry.first;
-                        vector<Point> &newPath = entry.second;
+                        const vector<Point> &newPath = entry.second;
                         Business &business = buses[id];
                         undoBusiness(business, curBusesResult[business.id], newPath);
-                        curBusesResult[business.id] = std::move(newPath);
+                        curBusesResult[business.id] = newPath;
                     }
 
                     printResult(satisfyBusesResult);
