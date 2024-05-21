@@ -222,14 +222,15 @@ struct Strategy {
             unordered_set<int> keys;
             keys.insert(from);
             for (const Point &point: path) {
-                Edge edge = edges[point.edgeId];
+                const Edge &edge = edges[point.edgeId];
                 int to = edge.from == from ? edge.to : edge.from;
                 if (keys.count(to)) {
                     //顶点重复，需要锁死这个通道进入得顶点
                     //return  new ArrayList<>();
-                    conflictPoints[point.startChannelId][to] = true;
+                    Point p = point;
+                    conflictPoints[p.startChannelId][to] = true;
                     path = aStar(start, end, width, searchGraph, edges, vertices, minDistance);
-                    conflictPoints[point.startChannelId][to] = false;
+                    conflictPoints[p.startChannelId][to] = false;
                     return path;
                 }
                 keys.insert(to);
@@ -257,6 +258,7 @@ struct Strategy {
             edges[i].from = ui;
             edges[i].to = vi;
             graph[ui].push_back({i, vi, 1});
+            graph[vi].push_back({i, ui, 1});
         }
 
 
@@ -466,7 +468,7 @@ struct Strategy {
             int id = entry.first;
             const vector<Point> &newPath = entry.second;
             Business &business = buses[id];
-            printf("%d %d", business.id, int(newPath.size()));
+            printf("%d %d\n", business.id, int(newPath.size()));
             for (int j = 0; j < newPath.size(); j++) {
                 const Point &point = newPath[j];
                 printf("%d %d %d", point.edgeId, point.startChannelId, point.endChannelId);
@@ -616,7 +618,7 @@ struct Strategy {
                     printResult(satisfyBusesResult);
                     for (int id: affectBusinesses) {
                         if (!satisfyBusesResult.count(id)) {
-                            buses[i].die = true;//死掉了，以后不调度
+                            buses[id].die = true;//死掉了，以后不调度
                         }
                     }
                     unsigned long long int r7 = runtime();
