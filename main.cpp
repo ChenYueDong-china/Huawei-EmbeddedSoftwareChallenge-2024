@@ -106,9 +106,9 @@ struct Strategy {
     int minDistance[MAX_N + 1][MAX_N + 1]{};//邻接表
     struct SearchUtils {
 
-        static vector<Point> aStar(int start, int end, int width, vector<NearEdge> searchGraph[MAX_N + 1],
-                                   const vector<Edge> &edges, const vector<Vertex> &vertices,
-                                   int minDistance[MAX_N + 1][MAX_N + 1]) {
+        inline static vector<Point> aStar(int start, int end, int width, const vector<NearEdge> searchGraph[MAX_N + 1],
+                                          const vector<Edge> &edges, const vector<Vertex> &vertices,
+                                          int minDistance[MAX_N + 1][MAX_N + 1]) {
             static int dist[CHANNEL_COUNT + 1][MAX_N + 1]
             , parentEdgeId[CHANNEL_COUNT + 1][MAX_N + 1]
             , parentStartChannel[CHANNEL_COUNT + 1][MAX_N + 1]
@@ -131,152 +131,7 @@ struct Strategy {
                 parentVertexId[i][start] = -1;//起始点为-1顶点
                 tmp.push({start, i, 0});
             }
-            cacheMap[minDistance[start][end] * MAX_M] = tmp;
-            int endChannel = -1;
-            int count = 0;
-
-            while (!cacheMap.empty()) {
-                pair<const int, stack<PointWithChannelDeep>> &entry = *cacheMap.begin();
-                int totalDeep = entry.first;
-                stack<PointWithChannelDeep> &sk = entry.second;
-                PointWithChannelDeep poll = sk.top();
-                sk.pop();
-                if (poll.deep != dist[poll.startChannel][poll.vertexId]) {
-                    if (sk.empty()) {
-                        cacheMap.erase(totalDeep);
-                    }
-                    continue;
-                }
-                if (poll.vertexId == end) {
-                    endChannel = poll.startChannel;
-                    break;
-                }
-                int lastChannel = poll.startChannel;
-                for (const NearEdge &nearEdge: searchGraph[poll.vertexId]) {
-                    int next = nearEdge.to;
-                    if (parentVertexId[poll.startChannel][poll.vertexId] == next) {
-                        //防止重边
-                        continue;
-                    }
-                    const Edge &edge = edges[nearEdge.id];
-                    if (edge.die) {
-                        continue;
-                    }
-                    const int *channel = edge.channel;
-                    int freeLength = 0;
-
-                    for (int i = 1; i <= CHANNEL_COUNT; i++) {
-                        if (channel[i] == -1) {
-                            if (channel[i] == channel[i - 1]) {
-                                freeLength++;
-                            } else {
-                                freeLength = 1;
-                            }
-                        } else {
-                            freeLength = 0;
-                        }
-                        if (freeLength >= width) {
-                            count++;
-                            int startChannel = i - width + 1;
-                            //用来穷举
-                            int nextDistance = poll.deep + nearEdge.weight * MAX_M;
-                            if (startChannel != lastChannel) {
-                                if (poll.vertexId == start || vertices[poll.vertexId].curChangeCount <= 0) {
-                                    //开始节点一定不需要转换,而且也转换不了
-                                    continue;
-                                }
-                                if (vertices[poll.vertexId].die) {
-                                    continue;//todo 预测，die之后没法转换,die之后curchangeCount可以直接为0
-                                }
-                                nextDistance += 1;
-                            }
-
-                            if (timestamp[startChannel][next] == timestampId &&
-                                dist[startChannel][next] <= nextDistance) {
-                                //访问过了，且距离没变得更近
-                                continue;
-                            }
-                            if (conflictPoints[startChannel][next]) {
-                                continue;//顶点重复
-                            }
-                            timestamp[startChannel][next] = timestampId;
-                            dist[startChannel][next] = nextDistance;
-                            parentStartChannel[startChannel][next] = poll.startChannel;
-                            parentEdgeId[startChannel][next] = nearEdge.id;
-                            parentVertexId[startChannel][next] = poll.vertexId;
-                            PointWithChannelDeep pointWithDeep{next, startChannel, nextDistance};
-                            nextDistance += MAX_M * minDistance[next][end];
-                            if (!cacheMap.count(nextDistance)) {
-                                cacheMap[nextDistance] = {};
-                            }
-                            cacheMap[nextDistance].push(pointWithDeep);
-                        }
-                    }
-                }
-                if (sk.empty()) {
-                    cacheMap.erase(totalDeep);
-                }
-            }
-            if (endChannel == -1) {
-                return {};
-            }
-            vector<Point> path;
-            int cur = end;
-            int curStartChannel = endChannel;
-            while (cur != start) {
-                int edgeId = parentEdgeId[curStartChannel][cur];
-                path.push_back({edgeId, curStartChannel, curStartChannel + width - 1});
-                int startChannel = parentStartChannel[curStartChannel][cur];
-                cur = parentVertexId[curStartChannel][cur];
-                curStartChannel = startChannel;
-            }
-            reverse(path.begin(), path.end());
-            int from = start;
-            unordered_set<int> keys;
-            keys.insert(from);
-            for (Point point: path) {
-                Edge edge = edges[point.edgeId];
-                int to = edge.from == from ? edge.to : edge.from;
-                if (keys.count(to)) {
-                    //顶点重复，需要锁死这个通道进入得顶点
-                    //return  new ArrayList<>();
-                    conflictPoints[point.startChannelId][to] = true;
-                    path = aStar(start, end, width, searchGraph, edges, vertices, minDistance);
-                    conflictPoints[point.startChannelId][to] = false;
-                    return path;
-                }
-                keys.insert(to);
-                from = to;
-            }
-            return path;
-        }
-
-        inline static vector<Point> aStar2(int start, int end, int width, const vector<NearEdge> searchGraph[MAX_N + 1],
-                                           const vector<Edge> &edges, const vector<Vertex> &vertices,
-                                           int minDistance[MAX_N + 1][MAX_N + 1]) {
-            static int dist[CHANNEL_COUNT + 1][MAX_N + 1]
-            , parentEdgeId[CHANNEL_COUNT + 1][MAX_N + 1]
-            , parentStartChannel[CHANNEL_COUNT + 1][MAX_N + 1]
-            , parentVertexId[CHANNEL_COUNT + 1][MAX_N + 1]
-            , timestamp[CHANNEL_COUNT + 1][MAX_N + 1]
-            , conflictPoints[CHANNEL_COUNT + 1][MAX_N + 1]
-            , timestampId = 1;//距离
-            timestampId++;
-            struct PointWithChannelDeep {
-                int vertexId;
-                int startChannel;
-                int deep;
-            };
-            static map<int, stack<PointWithChannelDeep>> cacheMap;
-            cacheMap.clear();
-            stack<PointWithChannelDeep> tmp;
-            for (int i = 1; i <= CHANNEL_COUNT; ++i) {
-                dist[i][start] = 0;
-                timestamp[i][start] = timestampId;
-                parentVertexId[i][start] = -1;//起始点为-1顶点
-                tmp.push({start, i, 0});
-            }
-            cacheMap[minDistance[start][end] * MAX_M] = tmp;
+            cacheMap[minDistance[start][end] * MAX_M] = std::move(tmp);
             int endChannel = -1;
             int count = 0;
 
@@ -366,14 +221,14 @@ struct Strategy {
             int from = start;
             unordered_set<int> keys;
             keys.insert(from);
-            for (Point point: path) {
+            for (const Point &point: path) {
                 Edge edge = edges[point.edgeId];
                 int to = edge.from == from ? edge.to : edge.from;
                 if (keys.count(to)) {
                     //顶点重复，需要锁死这个通道进入得顶点
                     //return  new ArrayList<>();
                     conflictPoints[point.startChannelId][to] = true;
-                    path = aStar2(start, end, width, searchGraph, edges, vertices, minDistance);
+                    path = aStar(start, end, width, searchGraph, edges, vertices, minDistance);
                     conflictPoints[point.startChannelId][to] = false;
                     return path;
                 }
@@ -479,8 +334,8 @@ struct Strategy {
         undoBusiness(business, originPath, {});
 
 
-        vector<Point> path = SearchUtils::aStar2(from, to, width,
-                                                 searchGraph, edges, vertices, minDistance);
+        vector<Point> path = SearchUtils::aStar(from, to, width,
+                                                searchGraph, edges, vertices, minDistance);
 
 //        vector<Point> path2 = SearchUtils::aStar(from, to, width,
 //                                                 searchGraph, edges, vertices, minDistance);
