@@ -409,7 +409,7 @@ struct Strategy {
 
     inline static void updateEdgeChannelTable(Edge &edge) {
         const int *channel = edge.channel;
-        int (*freeChannelTable)[41] = edge.freeChannelTable;
+        int (*freeChannelTable)[CHANNEL_COUNT + 1] = edge.freeChannelTable;
         int freeLength = 0;
         for (int i = 1; i <= CHANNEL_COUNT; i++) {
             freeChannelTable[i][0] = 0;//长度重新置为0
