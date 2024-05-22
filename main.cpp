@@ -761,6 +761,7 @@ int main() {
     //        freopen("in.txt", "r", stdin);
 //        freopen("out.txt", "w", stdout);
 //    SetConsoleOutputCP ( CP_UTF8 ) ;
+//todo 1.估分问题，2.能否不要暴力穷举，加一个不暴力的方式3.重复边或者顶点问题未解决好，4.预测复赛改动点（节点失效or其他？）
     static Strategy strategy;
     if (fopen("../data/0/in.txt", "r") != nullptr) {
         string path = "../data/";
