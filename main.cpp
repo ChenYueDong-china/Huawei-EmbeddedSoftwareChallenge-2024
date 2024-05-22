@@ -16,18 +16,21 @@
 
 using namespace std;
 
-const int INT_INF = 0x7f7f7f7f;
+//参数和常量定义
+const int RANDOM_SEED = 666;//留1s阈值
+const int SEARCH_TIME = 90 * 1000;//留1s阈值
+static int MAX_E_FAIL_COUNT = 6000;//留1s阈值
 const int MAX_M = 1000;
 const int MAX_N = 200;
 const int CHANNEL_COUNT = 40;
-const auto proStartTime = std::chrono::steady_clock::now();
-const int SEARCH_TIME = 89 * 1000;//留1s阈值
+const auto programStartTime = std::chrono::steady_clock::now();
+const int INT_INF = 0x7f7f7f7f;
+
 inline unsigned long long runtime() {
     auto now = std::chrono::steady_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(now - proStartTime);
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(now - programStartTime);
     return duration.count();
 }
-
 
 struct Edge {
     int from{};
@@ -87,12 +90,9 @@ struct Vertex {
 };
 
 struct Strategy {
-
     int N{};//节点数
-
     int M{};//边数
-    default_random_engine rad{666};
-
+    default_random_engine rad{RANDOM_SEED};
     vector<Edge> edges;
     vector<Vertex> vertices;
     vector<vector<NearEdge>> graph;//邻接表
@@ -105,6 +105,11 @@ struct Strategy {
     };
     vector<vector<Point>> busesOriginResult;//邻接表
     int minDistance[MAX_N + 1][MAX_N + 1]{};//邻接表
+    unsigned long long searchTime = 0;
+    int curHandleCount = 0;
+    double maxScore{};
+    double curScore{};
+
     struct SearchUtils {
 
         inline static vector<Point> aStar(int start, int end, int width, const vector<NearEdge> searchGraph[MAX_N + 1],
@@ -334,7 +339,6 @@ struct Strategy {
         }
     }
 
-    unsigned long long time1 = 0;
 
     vector<Point> aStarFindPath(Business &business, vector<Point> &originPath) {
         int from = business.from;
@@ -346,7 +350,7 @@ struct Strategy {
                                                 searchGraph, edges, vertices, minDistance);
         redoBusiness(business, originPath, {});
         unsigned long long int r1 = runtime();
-        time1 += r1 - l1;
+        searchTime += r1 - l1;
         return path;
     }
 
@@ -536,9 +540,9 @@ struct Strategy {
             const vector<Point> &newPath = entry.second;
             const Business &business = buses[id];
             int size = int(newPath.size());
-//                int width = business.needChannelLength;
+            int width = business.needChannelLength;
             int value = business.value;//价值高，size小好，width暂时不用吧
-            plus += 1.0 * value / size;
+            plus += 1.0 * value * width / size;
         }
         return totalValue * 1e9 + plus + 1;
     }
@@ -638,80 +642,65 @@ struct Strategy {
         }
     }
 
-    void mainLoop() {
-        int t;
-        scanf("%d", &t);
-        int maxFailLength = 0;
-        for (int i = 0; i < t; i++) {
-            int curFailLength = 0;
-            //邻接表
-            vector<vector<Point>> curBusesResult = busesOriginResult;
-            while (true) {
-                int failEdgeId = -1;
-                scanf("%d", &failEdgeId);
-                if (failEdgeId == -1) {
-                    break;
-                }
+    void dispatch(int failEdgeId, vector<vector<Point>> &curBusesResult) {
+        assert(failEdgeId != 0);
+        curHandleCount++;
+        edges[failEdgeId].die = true;
 
-                assert(failEdgeId != 0);
-                //todo 求受影响业务
-                edges[failEdgeId].die = true;
-                vector<int> affectBusinesses;
-                unordered_set<int> ids;
-                for (int busId: edges[failEdgeId].channel) {
-                    if (busId != -1 && !buses[busId].die) {
-                        assert(buses[busId].id == busId);
-                        if (!affectBusinesses.empty() && affectBusinesses[affectBusinesses.size() - 1]
-                                                         == busId) {
-                            continue;
-                        }
-                        assert(!ids.count(busId));
-                        ids.insert(busId);
-                        affectBusinesses.push_back(busId);
-                    }
+        //1.求受影响的业务
+        vector<int> affectBusinesses;
+        for (int busId: edges[failEdgeId].channel) {
+            if (busId != -1 && !buses[busId].die) {
+                assert(buses[busId].id == busId);
+                if (!affectBusinesses.empty() && affectBusinesses[affectBusinesses.size() - 1]
+                                                 == busId) {
+                    continue;
                 }
-                sort(affectBusinesses.begin(), affectBusinesses.end(), [&](int aId, int bId) {
-                    return buses[aId] < buses[bId];
-                });
-                //todo 处理断边
-                curFailLength++;
-                maxFailLength = max(curFailLength, maxFailLength);
-                int iteration = 0;
-                int remainTime = int(SEARCH_TIME - runtime());
-                int maxSearchTime = remainTime / (t - i) / (max(M / N, maxFailLength));
-                maxSearchTime = max(1, maxSearchTime);//至少给个1ms吧，小数据集多次搜索，不浪费
-                vector<int> tmp;//还是稍微有点用，减少个数
-                for (int id: affectBusinesses) {
-                    Business &business = buses[id];
-                    vector<Point> path = aStarFindPath(business, curBusesResult[business.id]);
-                    if (!path.empty()) {
-                        tmp.push_back(business.id);
-                    } else {
-                        business.die = true;//死了没得救
-                    }
-                }
-                affectBusinesses = std::move(tmp);
-                static vector<NearEdge> weightGraph[MAX_N + 1];
-                for (int j = 1; j <= N; j++) {
-                    weightGraph[j] = searchGraph[j];
-                }
-                unordered_map<int, vector<Point>> bestResult;
-                double bestScore = -1;//打分
-                while (iteration < 10) {
-                    for (int j = 1; j <= N; j++) {
-                        shuffle(searchGraph[j].begin(), searchGraph[j].end(), rad);
-                    }
-                    unordered_map<int, vector<Point>> satisfyBusesResult = getBaseLineResult(affectBusinesses,
-                                                                                             curBusesResult);
-                    double curScore = getEstimateScore(satisfyBusesResult);
-                    if (curScore > bestScore) {
-                        //打分
-                        bestScore = curScore;
-                        bestResult = satisfyBusesResult;
-                    }
+                affectBusinesses.push_back(busId);
+            }
+        }
+        sort(affectBusinesses.begin(), affectBusinesses.end(), [&](int aId, int bId) {
+            return buses[aId] < buses[bId];
+        });
 
 
-                    int originSize = int(satisfyBusesResult.size());
+        //2.去掉不可能寻到路径的业务，但是因为有重边重顶点，不一定准确，大概准确
+        vector<int> tmp;//还是稍微有点用，减少个数
+        for (int id: affectBusinesses) {
+            Business &business = buses[id];
+            vector<Point> path = aStarFindPath(business, curBusesResult[business.id]);
+            if (!path.empty()) {
+                tmp.push_back(business.id);
+            } else {
+                business.die = true;//死了没得救
+            }
+        }
+        affectBusinesses = std::move(tmp);
+
+
+        //3.循环调度,求出最优解保存
+        unordered_map<int, vector<Point>> bestResult;
+        double bestScore = -1;
+        int remainTime = (int) (SEARCH_TIME - 1000 - runtime());//留1s阈值
+        int remainMaxCount = MAX_E_FAIL_COUNT - curHandleCount + 1;
+        int maxRunTime = remainTime / remainMaxCount;
+        unsigned long long startTime = runtime();
+        int iteration = 0;
+        while (iteration == 0 || (runtime() - startTime) < maxRunTime) {
+            for (int j = 1; j <= N; j++) {
+                shuffle(searchGraph[j].begin(), searchGraph[j].end(), rad);
+            }
+            unordered_map<int, vector<Point>> satisfyBusesResult = getBaseLineResult(affectBusinesses,
+                                                                                     curBusesResult);
+            double curScore_ = getEstimateScore(satisfyBusesResult);
+            if (curScore_ > bestScore) {
+                //打分
+                bestScore = curScore_;
+                bestResult = satisfyBusesResult;
+            }
+
+
+            int originSize = int(satisfyBusesResult.size());
 //                    tryToAddBusiness(affectBusinesses, satisfyBusesResult, curBusesResult);
 //                    int curSize = int(satisfyBusesResult.size());
 //                    if (curSize > originSize) {
@@ -724,17 +713,41 @@ struct Strategy {
 //                            bestResult = satisfyBusesResult;
 //                        }
 //                    }
-                    shuffle(affectBusinesses.begin(), affectBusinesses.end(), rad);
-                    undoResult(satisfyBusesResult, curBusesResult);//回收结果，下次迭代
-                    iteration++;
+            shuffle(affectBusinesses.begin(), affectBusinesses.end(), rad);
+            undoResult(satisfyBusesResult, curBusesResult);//回收结果，下次迭代
+            iteration++;
+        }
+        redoResult(affectBusinesses, bestResult, curBusesResult);
+        printResult(bestResult);
+    }
+
+    void mainLoop() {
+        int t;
+        scanf("%d", &t);
+        maxScore = 10000.0 * t;
+        for (int i = 0; i < t; i++) {
+            //邻接表
+            vector<vector<Point>> curBusesResult = busesOriginResult;
+            while (true) {
+                int failEdgeId = -1;
+                scanf("%d", &failEdgeId);
+                if (failEdgeId == -1) {
+                    break;
                 }
-                redoResult(affectBusinesses, bestResult, curBusesResult);
-                printResult(bestResult);
+                dispatch(failEdgeId, curBusesResult);
             }
+            int totalValue = 0;
+            int remainValue = 0;
+            for (int j = 1; j < buses.size(); j++) {
+                totalValue += buses[j].value;
+                if (!buses[j].die) {
+                    remainValue += buses[j].value;
+                }
+            }
+            curScore += 10000.0 * remainValue / totalValue;
             reset();
         }
     }
-
 };
 
 inline void printError(const string &s) {
@@ -751,6 +764,7 @@ int main() {
     static Strategy strategy;
     if (fopen("../data/0/in.txt", "r") != nullptr) {
         string path = "../data/";
+        MAX_E_FAIL_COUNT = 12000;
         long long allCost = 0;
         for (int i = 0; i < 1; i++) {
             unsigned long long start = runtime();
@@ -760,7 +774,11 @@ int main() {
             strategy.init();
             strategy.mainLoop();
             unsigned long long end = runtime();
-            printError("runTime:" + to_string(end - start) + ",aStarTime:" + to_string(strategy.time1));
+            printError("runTime:" + to_string(end - start) + ",aStarTime:" + to_string(strategy.searchTime) +
+                       ",maxScore:" +
+                       to_string(strategy.maxScore).substr(0, to_string(strategy.maxScore).length() - 3) +
+                       ",curScore:" +
+                       to_string(strategy.curScore).substr(0, to_string(strategy.curScore).length() - 3));
         }
     } else {
         strategy.init();
