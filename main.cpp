@@ -2,7 +2,6 @@
 // Created by chenyuedong on 2024/5/15.
 //
 #include <iostream>
-#include <io.h>
 #include <string>
 #include <random>
 #include <chrono>
@@ -13,6 +12,7 @@
 #include <algorithm>
 #include <map>
 #include <stack>
+#include <cstring>
 
 using namespace std;
 
@@ -660,7 +660,7 @@ int main() {
 //        freopen("out.txt", "w", stdout);
 //    SetConsoleOutputCP ( CP_UTF8 ) ;
     static Strategy strategy;
-    if (debug) {
+    if (fopen("../data/0/in.txt", "r") != nullptr) {
         string path = "../data/";
         long long allCost = 0;
         for (int i = 0; i < 1; i++) {
