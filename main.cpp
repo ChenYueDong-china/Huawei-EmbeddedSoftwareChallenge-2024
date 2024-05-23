@@ -234,7 +234,7 @@ struct Strategy {
                 int to = edge.from == from ? edge.to : edge.from;
                 if (keys.count(to)) {
                     //顶点重复，需要锁死这个通道进入得顶点
-                   // return  {};
+                    // return  {};
                     int tmpFrom = start;
                     int lockE = -1;
                     int lockV = -1;
@@ -642,7 +642,7 @@ struct Strategy {
         }
     }
 
-    void dispatch(int failEdgeId, vector<vector<Point>> &curBusesResult) {
+    void dispatch(double avgBusEveryCValue, int failEdgeId, vector<vector<Point>> &curBusesResult) {
         assert(failEdgeId != 0);
         curHandleCount++;
         edges[failEdgeId].die = true;
@@ -694,6 +694,29 @@ struct Strategy {
             }
             unordered_map<int, vector<Point>> satisfyBusesResult = getBaseLineResult(affectBusinesses,
                                                                                      curBusesResult);
+
+            //1. 考虑死掉一些业务,腾出空间给新的断边寻路?
+//            unordered_set<int> shouldDieIds;
+//            for (const auto &entry: satisfyBusesResult) {
+//                int id = entry.first;
+//                const vector<Point> &newPath = entry.second;
+//                Business &business = buses[id];
+//                const vector<Point> &originPath = curBusesResult[business.id];
+//                if (originPath.size() >= newPath.size()) {
+//                    continue;
+//                }
+//                double curEveryCValue = 1.0 * business.value /
+//                                        (business.needChannelLength
+//                                         * int(newPath.size() - originPath.size()));
+//                if (curEveryCValue < 1.0 * avgBusEveryCValue) {
+//                    undoBusiness(business, newPath, originPath);
+//                    shouldDieIds.insert(id);
+//                }
+//            }
+//            for (const auto &id: shouldDieIds) {
+//                satisfyBusesResult.erase(id);
+//            }
+
             double curScore_ = getEstimateScore(satisfyBusesResult);
             if (curScore_ > bestScore) {
                 //打分
@@ -727,6 +750,11 @@ struct Strategy {
         int t;
         scanf("%d", &t);
         maxScore = 10000.0 * t;
+        double avgBusEveryCValue = 0;
+        for (int i = 1; i <= N; i++) {
+            avgBusEveryCValue += buses[i].value;
+        }
+        avgBusEveryCValue = avgBusEveryCValue / (M * CHANNEL_COUNT);
         for (int i = 0; i < t; i++) {
             //邻接表
             vector<vector<Point>> curBusesResult = busesOriginResult;
@@ -736,7 +764,7 @@ struct Strategy {
                 if (failEdgeId == -1) {
                     break;
                 }
-                dispatch(failEdgeId, curBusesResult);
+                dispatch(avgBusEveryCValue, failEdgeId, curBusesResult);
             }
             int totalValue = 0;
             int remainValue = 0;
