@@ -17,9 +17,11 @@
 using namespace std;
 
 //参数和常量定义
-const int RANDOM_SEED = 666;//留1s阈值
+const int RANDOM_SEED = 111;//留1s阈值
 const int SEARCH_TIME = 90 * 1000;//留1s阈值
 static int MAX_E_FAIL_COUNT = 6000;//留1s阈值
+const int MIN_ITERATION_COUNT = 1;//留1s阈值
+const bool IS_ONLINE = false;//留1s阈值
 const int MAX_M = 1000;
 const int MAX_N = 200;
 const int CHANNEL_COUNT = 40;
@@ -232,10 +234,8 @@ struct Strategy {
                 int to = edge.from == from ? edge.to : edge.from;
                 if (keys.count(to)) {
                     //顶点重复，需要锁死这个通道进入得顶点
-                    //return  new ArrayList<>();
-//                    Point p = point;
+                   // return  {};
                     int tmpFrom = start;
-//                        int lockC = -1;不lockC，分没变高多少
                     int lockE = -1;
                     int lockV = -1;
                     for (const Point &point1: path) {
@@ -542,7 +542,7 @@ struct Strategy {
             int size = int(newPath.size());
             int width = business.needChannelLength;
             int value = business.value;//价值高，size小好，width暂时不用吧
-            plus += 1.0 * value * width / size;
+            plus += 1.0 * value / size;
         }
         return totalValue * 1e9 + plus + 1;
     }
@@ -682,11 +682,13 @@ struct Strategy {
         unordered_map<int, vector<Point>> bestResult;
         double bestScore = -1;
         int remainTime = (int) (SEARCH_TIME - 1000 - runtime());//留1s阈值
-        int remainMaxCount = MAX_E_FAIL_COUNT - curHandleCount + 1;
+        int remainMaxCount = max(1, MAX_E_FAIL_COUNT - curHandleCount + 1);
         int maxRunTime = remainTime / remainMaxCount;
         unsigned long long startTime = runtime();
         int iteration = 0;
-        while (iteration == 0 || (runtime() - startTime) < maxRunTime) {
+        while ((((runtime() - startTime) < maxRunTime) && IS_ONLINE)
+               || (!IS_ONLINE && iteration < MIN_ITERATION_COUNT)
+                ) {
             for (int j = 1; j <= N; j++) {
                 shuffle(searchGraph[j].begin(), searchGraph[j].end(), rad);
             }
