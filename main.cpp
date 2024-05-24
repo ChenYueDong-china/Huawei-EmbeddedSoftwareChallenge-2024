@@ -16,12 +16,18 @@
 
 using namespace std;
 
-//参数和常量定义
-const int RANDOM_SEED = 111;//留1s阈值
-const int SEARCH_TIME = 90 * 1000;//留1s阈值
-static int MAX_E_FAIL_COUNT = 6000;//留1s阈值
-const int MIN_ITERATION_COUNT = 1;//留1s阈值
-const bool IS_ONLINE = false;//留1s阈值
+//参数
+const int RANDOM_SEED = 666;//种子
+const int MIN_ITERATION_COUNT = 1;//穷举次数
+const bool IS_ONLINE = false;//是否使劲穷举
+
+//业务是否不救参数
+const double SHOULD_DIE_FACTOR = 5.0;
+const double SHOULD_DIE_MIN_RECOVER_RATE = 0.7;
+
+//常量
+static int MAX_E_FAIL_COUNT = 6000;
+const int SEARCH_TIME = 90 * 1000;
 const int MAX_M = 1000;
 const int MAX_N = 200;
 const int CHANNEL_COUNT = 40;
@@ -111,6 +117,8 @@ struct Strategy {
     int curHandleCount = 0;
     double maxScore{};
     double curScore{};
+    int recoveryCount = 0;
+    int maxDieCount = 0;
 
     struct SearchUtils {
 
@@ -662,6 +670,7 @@ struct Strategy {
         sort(affectBusinesses.begin(), affectBusinesses.end(), [&](int aId, int bId) {
             return buses[aId] < buses[bId];
         });
+        maxDieCount += int(affectBusinesses.size());
 
 
         //2.去掉不可能寻到路径的业务，但是因为有重边重顶点，不一定准确，大概准确
@@ -695,28 +704,31 @@ struct Strategy {
             unordered_map<int, vector<Point>> satisfyBusesResult = getBaseLineResult(affectBusinesses,
                                                                                      curBusesResult);
 
-            //1. 考虑死掉一些业务,腾出空间给新的断边寻路?
-//            unordered_set<int> shouldDieIds;
-//            for (const auto &entry: satisfyBusesResult) {
-//                int id = entry.first;
-//                const vector<Point> &newPath = entry.second;
-//                Business &business = buses[id];
-//                const vector<Point> &originPath = curBusesResult[business.id];
-//                if (originPath.size() >= newPath.size()) {
-//                    continue;
-//                }
-//                double curEveryCValue = 1.0 * business.value /
-//                                        (business.needChannelLength
-//                                         * int(newPath.size() - originPath.size()));
-//                if (curEveryCValue < 1.0 * avgBusEveryCValue) {
-//                    undoBusiness(business, newPath, originPath);
-//                    shouldDieIds.insert(id);
-//                }
-//            }
-//            for (const auto &id: shouldDieIds) {
-//                satisfyBusesResult.erase(id);
-//            }
+            //todo 可以注释掉 1. 考虑死掉一些业务,腾出空间给新的断边寻路?
+            unordered_set<int> shouldDieIds;
+            for (const auto &entry: satisfyBusesResult) {
+                int id = entry.first;
+                const vector<Point> &newPath = entry.second;
+                Business &business = buses[id];
+                const vector<Point> &originPath = curBusesResult[business.id];
+                if (originPath.size() >= newPath.size()) {
+                    continue;
+                }
+                double curEveryCValue = 1.0 * business.value /
+                                        (business.needChannelLength
+                                         * int(newPath.size() - originPath.size()));
+                if (curEveryCValue < SHOULD_DIE_FACTOR * avgBusEveryCValue
+                    && 1.0 * recoveryCount / maxDieCount < SHOULD_DIE_MIN_RECOVER_RATE) {
+                    //救活率不高的情况下，选择放弃一些低价值货物
+                    undoBusiness(business, newPath, originPath);
+                    shouldDieIds.insert(id);
+                }
+            }
+            for (const auto &id: shouldDieIds) {
+                satisfyBusesResult.erase(id);
+            }
 
+            //2.算分
             double curScore_ = getEstimateScore(satisfyBusesResult);
             if (curScore_ > bestScore) {
                 //打分
@@ -742,6 +754,7 @@ struct Strategy {
             undoResult(satisfyBusesResult, curBusesResult);//回收结果，下次迭代
             iteration++;
         }
+        recoveryCount += int(bestResult.size());
         redoResult(affectBusinesses, bestResult, curBusesResult);
         printResult(bestResult);
     }
@@ -754,6 +767,7 @@ struct Strategy {
         for (int i = 1; i <= N; i++) {
             avgBusEveryCValue += buses[i].value;
         }
+
         avgBusEveryCValue = avgBusEveryCValue / (M * CHANNEL_COUNT);
         for (int i = 0; i < t; i++) {
             //邻接表
