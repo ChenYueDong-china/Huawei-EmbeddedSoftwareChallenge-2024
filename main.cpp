@@ -22,8 +22,8 @@ const int MIN_ITERATION_COUNT = 1;//穷举次数
 const bool IS_ONLINE = false;//是否使劲穷举
 
 //业务是否不救参数
-const double SHOULD_DIE_FACTOR = 5.0;
-const double SHOULD_DIE_MIN_RECOVER_RATE = 0.7;
+const double SHOULD_DIE_FACTOR = 4.0;
+const double SHOULD_DIE_MIN_RECOVER_RATE = 0.75;
 
 //常量
 static int MAX_E_FAIL_COUNT = 6000;
