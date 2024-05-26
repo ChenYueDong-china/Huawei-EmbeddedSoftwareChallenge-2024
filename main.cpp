@@ -1,6 +1,7 @@
-//
-// Created by chenyuedong on 2024/5/15.
-//
+/*
+ * Description: SimpleDemo，主要思路是不断随机迭代搜索+选择性拯救业务获得最优解
+ * Date: 2024-05-18
+ */
 #include <iostream>
 #include <string>
 #include <random>
@@ -13,17 +14,17 @@
 #include <map>
 #include <stack>
 #include <cstring>
-
 using namespace std;
 
-//参数
+//迭代参数
 const int RANDOM_SEED = 666;//种子
-const int MIN_ITERATION_COUNT = 1;//穷举次数
+const int MIN_ITERATION_COUNT = 1;//最低穷举次数
 const bool IS_ONLINE = false;//是否使劲穷举
 
 //业务是否不救参数
-const double SHOULD_DIE_FACTOR = 4.0;
-const double SHOULD_DIE_MIN_RECOVER_RATE = 0.75;
+const int REMAIN_COUNT_RECOVERY = 5;//剩余几个一定救，只有t大于1有用，猜测线上每一次t的断边个数都一样
+const double SHOULD_DIE_FACTOR = 4.0;//不救哪些业务因子
+const double SHOULD_DIE_MIN_RECOVER_RATE = 0.75;//救活率低于这个才不救
 
 //常量
 static int MAX_E_FAIL_COUNT = 6000;
@@ -40,6 +41,11 @@ inline unsigned long long runtime() {
     return duration.count();
 }
 
+inline void printError(const string &s) {
+    fprintf(stderr, "%s\n", s.c_str());
+    fflush(stderr);
+}
+//边
 struct Edge {
     int from{};
     int to{};
@@ -58,13 +64,12 @@ struct Edge {
         weight = 1;
     }
 };
-
+//邻接表的边
 struct NearEdge {
     int id;
     int to;
 };
-
-
+//业务
 struct Business {
     int id{};
     int from{};
@@ -82,8 +87,7 @@ struct Business {
     }
 
 };
-
-
+//顶点
 struct Vertex {
     int maxChangeCount{};
     int curChangeCount{};
@@ -96,7 +100,7 @@ struct Vertex {
         die = false;
     }
 };
-
+//策略类
 struct Strategy {
     int N{};//节点数
     int M{};//边数
@@ -121,7 +125,6 @@ struct Strategy {
     int maxDieCount = 0;
 
     struct SearchUtils {
-
         inline static vector<Point> aStar(int start, int end, int width, const vector<NearEdge> searchGraph[MAX_N + 1],
                                           const vector<Edge> &edges, const vector<Vertex> &vertices,
                                           int minDistance[MAX_N + 1][MAX_N + 1]) {
@@ -269,7 +272,355 @@ struct Strategy {
         }
     };
 
+    //恢复场景
+    void reset() {
+        //恢复边和顶点状态
+        for (Edge &edge: edges) {
+            edge.reset();
+        }
+        for (Vertex &vertex: vertices) {
+            vertex.reset();
+        }
+        for (Business &bus: buses) {
+            bus.reset();
+        }
+        for (int i = 1; i < busesOriginResult.size(); i++) {
+            vector<Point> &result = busesOriginResult[i];
+            for (const Point &point: result) {
+                //只需要占用通道，顶点变换能力不需要，最初没有
+                for (int j = point.startChannelId; j <= point.endChannelId; j++) {
+                    edges[point.edgeId].channel[j] = i;
+                }
+            }
+        }
+        for (int i = 1; i <= N; ++i) {
+            searchGraph[i] = graph[i];
+        }
+        for (int i = 1; i < edges.size(); i++) {
+            Edge &edge = edges[i];
+            //计算表
+            updateEdgeChannelTable(edge);
+        }
+    }
 
+    //获得路径经过的顶点
+    inline unordered_set<int> getOriginChangeV(const Business &business, const vector<Point> &path) {
+        unordered_set<int> originChangeV;
+        if (!path.empty()) {
+            int from = business.from;
+            int lastChannel = path[0].startChannelId;
+            for (const Point &point: path) {
+                int to = edges[point.edgeId].from == from ?
+                         edges[point.edgeId].to
+                                                          : edges[point.edgeId].from;
+                if (point.startChannelId != lastChannel) {
+                    originChangeV.insert(from);
+                }
+                from = to;
+                lastChannel = point.startChannelId;
+            }
+        }
+        return originChangeV;
+    }
+
+    //获得路径经过的边
+    inline static unordered_map<int, int> getOriginEdgeIds(const vector<Point> &path) {
+        unordered_map<int, int> result;
+        if (!path.empty()) {
+            for (const Point &point: path) {
+                result[point.edgeId] = point.startChannelId;
+            }
+        }
+        return result;
+    }
+
+    //更新边的通道表，加快aStar搜索速度使用
+    inline static void updateEdgeChannelTable(Edge &edge) {
+        const int *channel = edge.channel;
+        int (*freeChannelTable)[CHANNEL_COUNT + 1] = edge.freeChannelTable;
+        int freeLength = 0;
+        for (int i = 1; i <= CHANNEL_COUNT; i++) {
+            freeChannelTable[i][0] = 0;//长度重新置为0
+        }
+        for (int i = 1; i <= CHANNEL_COUNT; i++) {
+            if (channel[i] == -1) {
+                if (channel[i] == channel[i - 1]) {
+                    freeLength++;
+                } else {
+                    freeLength = 1;
+                }
+            } else {
+                freeLength = 0;
+            }
+            if (freeLength > 0) {
+                for (int j = freeLength; j > 0; j--) {
+                    int start = i - j + 1;
+                    freeChannelTable[j][++freeChannelTable[j][0]] = start;
+                }
+            }
+        }
+    }
+
+    //在老路径基础上，回收新路径
+    inline void undoBusiness(const Business &business, const vector<Point> &newPath, const vector<Point> &originPath) {
+        //变通道次数加回来
+        unordered_set<int> originChangeV = getOriginChangeV(business, originPath);
+        unordered_map<int, int> originEdgeIds = getOriginEdgeIds(originPath);
+        int from = business.from;
+        int lastChannel = newPath[0].startChannelId;
+        for (const Point &point: newPath) {
+            Edge &edge = edges[point.edgeId];
+            assert(edge.channel[point.startChannelId] == business.id);
+            for (int j = point.startChannelId; j <= point.endChannelId; j++) {
+                if (originEdgeIds.count(point.edgeId)
+                    && j >= originEdgeIds[point.edgeId]
+                    && j <= originEdgeIds[point.edgeId]
+                            + business.needChannelLength - 1) {
+                    continue;
+                }
+                edge.channel[j] = -1;
+            }
+            updateEdgeChannelTable(edge);
+            int to = edge.from == from ? edge.to : edge.from;
+            if (point.startChannelId != lastChannel && !originChangeV.count(from)) {
+                vertices[from].curChangeCount++;
+                vertices[from].changeBusIds.erase(business.id);//没改变
+                assert(vertices[from].curChangeCount <= vertices[from].maxChangeCount);
+            }
+            from = to;
+            lastChannel = point.startChannelId;
+        }
+    }
+
+    //在老路径基础上，增加新路径
+    inline void redoBusiness(const Business &business, const vector<Point> &newPath, const vector<Point> &originPath) {
+        unordered_set<int> originChangeV = getOriginChangeV(business, originPath);
+        int from = business.from;
+        int lastChannel = newPath[0].startChannelId;
+        for (const Point &point: newPath) {
+            Edge &edge = edges[point.edgeId];
+            //占用通道
+            for (int j = point.startChannelId; j <= point.endChannelId; j++) {
+                assert(edge.channel[j] == -1 || edge.channel[j] == business.id);
+                edge.channel[j] = business.id;
+            }
+            updateEdgeChannelTable(edge);
+            int to = edge.from == from ? edge.to : edge.from;
+            if (point.startChannelId != lastChannel
+                && !originChangeV.count(from)) {//包含可以复用资源
+                //变通道，需要减
+                vertices[from].curChangeCount--;
+                vertices[from].changeBusIds.insert(business.id);
+            }
+            from = to;
+            lastChannel = point.startChannelId;
+        }
+    }
+
+    //aStar寻路
+    vector<Point> aStarFindPath(Business &business, vector<Point> &originPath) {
+        int from = business.from;
+        int to = business.to;
+        int width = business.needChannelLength;
+        unsigned long long int l1 = runtime();
+        undoBusiness(business, originPath, {});
+        vector<Point> path = SearchUtils::aStar(from, to, width,
+                                                searchGraph, edges, vertices, minDistance);
+        redoBusiness(business, originPath, {});
+        unsigned long long int r1 = runtime();
+        searchTime += r1 - l1;
+        return path;
+    }
+
+    //把全部增加上的新路径回收掉
+    void undoResult(const unordered_map<int, vector<Point>> &result, const vector<vector<Point>> &curBusesResult) {
+        for (const auto &entry: result) {
+            int id = entry.first;
+            const vector<Point> &newPath = entry.second;
+            Business &business = buses[id];
+            undoBusiness(business, newPath, curBusesResult[business.id]);
+        }
+    }
+
+    //把全部需要增加上的新路径增加进去，并且回收老路径
+    void redoResult(vector<int> &affectBusinesses, unordered_map<int, vector<Point>> &result,
+                    vector<vector<Point>> &curBusesResult) {
+        for (const auto &entry: result) {
+            int id = entry.first;
+            const vector<Point> &newPath = entry.second;
+            const vector<Point> &originPath = curBusesResult[id];
+            const Business &business = buses[id];
+            //先加入新路径
+            redoBusiness(business, newPath, originPath);
+            //未错误，误报
+            undoBusiness(business, originPath, newPath);
+            curBusesResult[business.id] = newPath;
+        }
+        for (const int &id: affectBusinesses) {
+            Business &business = buses[id];
+            if (!result.count(business.id)) {
+                business.die = true;//死掉了，以后不调度
+            }
+        }
+    }
+
+    //输出结果
+    inline void printResult(const unordered_map<int, vector<Point>> &resultMap) {
+        printf("%d\n", int(resultMap.size()));
+        for (auto &entry: resultMap) {
+            int id = entry.first;
+            const vector<Point> &newPath = entry.second;
+            Business &business = buses[id];
+            printf("%d %d\n", business.id, int(newPath.size()));
+            for (int j = 0; j < newPath.size(); j++) {
+                const Point &point = newPath[j];
+                printf("%d %d %d", point.edgeId, point.startChannelId, point.endChannelId);
+                if (j < int(newPath.size()) - 1) {
+                    printf(" ");
+                } else {
+                    printf("\n");
+                }
+            }
+        }
+        fflush(stdout);
+    }
+
+    //给路径打分，随机穷举使用
+    double getEstimateScore(const unordered_map<int, vector<Point>> &satisfyBusesResult) {
+        int totalValue = 0;
+        for (const auto &entry: satisfyBusesResult) {
+            totalValue += buses[entry.first].value;
+        }
+        //原则，value，width大的尽量短一点
+        double plus = 0;
+        for (const auto &entry: satisfyBusesResult) {
+            int id = entry.first;
+            const vector<Point> &newPath = entry.second;
+            const Business &business = buses[id];
+            int size = int(newPath.size());
+            int width = business.needChannelLength;
+            int value = business.value;//价值高，size小好，width暂时不用吧
+            plus += 1.0 * value / size;
+        }
+        return totalValue * 1e9 + plus + 1;
+    }
+
+    //简单获得一个基础分
+    unordered_map<int, vector<Point>>
+    getBaseLineResult(const vector<int> &affectBusinesses, vector<vector<Point>> &curBusesResult) {
+        unordered_map<int, vector<Point>> satisfyBusesResult;
+        for (int id: affectBusinesses) {
+            Business &business = buses[id];
+            vector<Point> path = aStarFindPath(business, curBusesResult[business.id]);
+            if (!path.empty()) {
+                //变通道次数得减回去
+                redoBusiness(business, path, curBusesResult[business.id]);
+                satisfyBusesResult[business.id] = std::move(path);
+            }
+        }
+        return satisfyBusesResult;
+    }
+
+    //核心调度函数
+    void
+    dispatch(bool deleteLongPathBus, double avgBusEveryCValue, int failEdgeId, vector<vector<Point>> &curBusesResult) {
+        assert(failEdgeId != 0);
+        curHandleCount++;
+        edges[failEdgeId].die = true;
+
+        //1.求受影响的业务
+        vector<int> affectBusinesses;
+        for (int busId: edges[failEdgeId].channel) {
+            if (busId != -1 && !buses[busId].die) {
+                assert(buses[busId].id == busId);
+                if (!affectBusinesses.empty() && affectBusinesses[affectBusinesses.size() - 1]
+                                                 == busId) {
+                    continue;
+                }
+                affectBusinesses.push_back(busId);
+            }
+        }
+        sort(affectBusinesses.begin(), affectBusinesses.end(), [&](int aId, int bId) {
+            return buses[aId] < buses[bId];
+        });
+        maxDieCount += int(affectBusinesses.size());
+
+
+        //2.去掉不可能寻到路径的业务，但是因为有重边重顶点，不一定准确，大概准确
+        vector<int> tmp;//还是稍微有点用，减少个数
+        for (int id: affectBusinesses) {
+            Business &business = buses[id];
+            vector<Point> path = aStarFindPath(business, curBusesResult[business.id]);
+            if (!path.empty()) {
+                tmp.push_back(business.id);
+            } else {
+                business.die = true;//死了没得救
+            }
+        }
+        affectBusinesses = std::move(tmp);
+
+
+        //3.循环调度,求出最优解保存
+        unordered_map<int, vector<Point>> bestResult;
+        double bestScore = -1;
+        int remainTime = (int) (SEARCH_TIME - 1000 - runtime());//留1s阈值
+        int remainMaxCount = max(1, MAX_E_FAIL_COUNT - curHandleCount + 1);
+        int maxRunTime = remainTime / remainMaxCount;
+        unsigned long long startTime = runtime();
+        int iteration = 0;
+        while ((((runtime() - startTime) < maxRunTime) && IS_ONLINE)
+               || (!IS_ONLINE && iteration < MIN_ITERATION_COUNT)
+                ) {
+            for (int j = 1; j <= N; j++) {
+                shuffle(searchGraph[j].begin(), searchGraph[j].end(), rad);
+            }
+            unordered_map<int, vector<Point>> satisfyBusesResult = getBaseLineResult(affectBusinesses,
+                                                                                     curBusesResult);
+
+            // 考虑死掉一些业务,腾出空间给新的断边寻路?
+            unordered_set<int> shouldDieIds;
+            for (const auto &entry: satisfyBusesResult) {
+                int id = entry.first;
+                const vector<Point> &newPath = entry.second;
+                Business &business = buses[id];
+                const vector<Point> &originPath = curBusesResult[business.id];
+                if (originPath.size() >= newPath.size()) {
+                    continue;
+                }
+                double curEveryCValue = 1.0 * business.value /
+                                        (business.needChannelLength
+                                         * int(newPath.size() - originPath.size()));
+                if (curEveryCValue < SHOULD_DIE_FACTOR * avgBusEveryCValue
+                    && 1.0 * recoveryCount / maxDieCount < SHOULD_DIE_MIN_RECOVER_RATE
+                    && deleteLongPathBus) {
+                    //救活率不高的情况下，选择放弃一些低价值货物
+                    undoBusiness(business, newPath, originPath);
+                    shouldDieIds.insert(id);
+                }
+            }
+            for (const auto &id: shouldDieIds) {
+                satisfyBusesResult.erase(id);
+            }
+
+            //2.算分
+            double curScore_ = getEstimateScore(satisfyBusesResult);
+            if (curScore_ > bestScore) {
+                //打分
+                bestScore = curScore_;
+                bestResult = satisfyBusesResult;
+            }
+
+            //3.重排,穷举
+            shuffle(affectBusinesses.begin(), affectBusinesses.end(), rad);
+            undoResult(satisfyBusesResult, curBusesResult);//回收结果，下次迭代
+            iteration++;
+        }
+        recoveryCount += int(bestResult.size());
+        redoResult(affectBusinesses, bestResult, curBusesResult);
+        printResult(bestResult);
+    }
+
+    //初始化
     void init() {
         scanf("%d %d", &N, &M);
         edges.resize(M + 1);
@@ -347,418 +698,7 @@ struct Strategy {
         }
     }
 
-
-    vector<Point> aStarFindPath(Business &business, vector<Point> &originPath) {
-        int from = business.from;
-        int to = business.to;
-        int width = business.needChannelLength;
-        unsigned long long int l1 = runtime();
-        undoBusiness(business, originPath, {});
-        vector<Point> path = SearchUtils::aStar(from, to, width,
-                                                searchGraph, edges, vertices, minDistance);
-        redoBusiness(business, originPath, {});
-        unsigned long long int r1 = runtime();
-        searchTime += r1 - l1;
-        return path;
-    }
-
-    unordered_set<int> getOriginChangeV(const Business &business, const vector<Point> &path) {
-        unordered_set<int> originChangeV;
-        if (!path.empty()) {
-            int from = business.from;
-            int lastChannel = path[0].startChannelId;
-            for (const Point &point: path) {
-                int to = edges[point.edgeId].from == from ?
-                         edges[point.edgeId].to
-                                                          : edges[point.edgeId].from;
-                if (point.startChannelId != lastChannel) {
-                    originChangeV.insert(from);
-                }
-                from = to;
-                lastChannel = point.startChannelId;
-            }
-        }
-        return originChangeV;
-    }
-
-    inline void redoBusiness(const Business &business, const vector<Point> &newPath, const vector<Point> &originPath) {
-        unordered_set<int> originChangeV = getOriginChangeV(business, originPath);
-        int from = business.from;
-        int lastChannel = newPath[0].startChannelId;
-        for (const Point &point: newPath) {
-            Edge &edge = edges[point.edgeId];
-            //占用通道
-            for (int j = point.startChannelId; j <= point.endChannelId; j++) {
-                assert(edge.channel[j] == -1 || edge.channel[j] == business.id);
-                edge.channel[j] = business.id;
-            }
-            updateEdgeChannelTable(edge);
-            int to = edge.from == from ? edge.to : edge.from;
-            if (point.startChannelId != lastChannel
-                && !originChangeV.count(from)) {//包含可以复用资源
-                //变通道，需要减
-                vertices[from].curChangeCount--;
-                vertices[from].changeBusIds.insert(business.id);
-            }
-            from = to;
-            lastChannel = point.startChannelId;
-        }
-    }
-
-    inline static unordered_map<int, int> getOriginEdgeIds(const vector<Point> &path) {
-        unordered_map<int, int> result;
-        if (!path.empty()) {
-            for (const Point &point: path) {
-                result[point.edgeId] = point.startChannelId;
-            }
-        }
-        return result;
-    }
-
-    inline static void updateEdgeChannelTable(Edge &edge) {
-        const int *channel = edge.channel;
-        int (*freeChannelTable)[CHANNEL_COUNT + 1] = edge.freeChannelTable;
-        int freeLength = 0;
-        for (int i = 1; i <= CHANNEL_COUNT; i++) {
-            freeChannelTable[i][0] = 0;//长度重新置为0
-        }
-        for (int i = 1; i <= CHANNEL_COUNT; i++) {
-            if (channel[i] == -1) {
-                if (channel[i] == channel[i - 1]) {
-                    freeLength++;
-                } else {
-                    freeLength = 1;
-                }
-            } else {
-                freeLength = 0;
-            }
-            if (freeLength > 0) {
-                for (int j = freeLength; j > 0; j--) {
-                    int start = i - j + 1;
-                    freeChannelTable[j][++freeChannelTable[j][0]] = start;
-                }
-            }
-        }
-    }
-
-    inline void undoBusiness(const Business &business, const vector<Point> &newPath, const vector<Point> &originPath) {
-        //变通道次数加回来
-        unordered_set<int> originChangeV = getOriginChangeV(business, originPath);
-        unordered_map<int, int> originEdgeIds = getOriginEdgeIds(originPath);
-        int from = business.from;
-        int lastChannel = newPath[0].startChannelId;
-        for (const Point &point: newPath) {
-            Edge &edge = edges[point.edgeId];
-            assert(edge.channel[point.startChannelId] == business.id);
-            for (int j = point.startChannelId; j <= point.endChannelId; j++) {
-                if (originEdgeIds.count(point.edgeId)
-                    && j >= originEdgeIds[point.edgeId]
-                    && j <= originEdgeIds[point.edgeId]
-                            + business.needChannelLength - 1) {
-                    continue;
-                }
-                edge.channel[j] = -1;
-            }
-            updateEdgeChannelTable(edge);
-            int to = edge.from == from ? edge.to : edge.from;
-            if (point.startChannelId != lastChannel && !originChangeV.count(from)) {
-                vertices[from].curChangeCount++;
-                vertices[from].changeBusIds.erase(business.id);//没改变
-                assert(vertices[from].curChangeCount <= vertices[from].maxChangeCount);
-            }
-            from = to;
-            lastChannel = point.startChannelId;
-        }
-    }
-
-    inline void printResult(const unordered_map<int, vector<Point>> &resultMap) {
-        printf("%d\n", int(resultMap.size()));
-        for (auto &entry: resultMap) {
-            int id = entry.first;
-            const vector<Point> &newPath = entry.second;
-            Business &business = buses[id];
-            printf("%d %d\n", business.id, int(newPath.size()));
-            for (int j = 0; j < newPath.size(); j++) {
-                const Point &point = newPath[j];
-                printf("%d %d %d", point.edgeId, point.startChannelId, point.endChannelId);
-                if (j < int(newPath.size()) - 1) {
-                    printf(" ");
-                } else {
-                    printf("\n");
-                }
-            }
-        }
-        fflush(stdout);
-    }
-
-    void reset() {
-        //恢复边和顶点状态
-        for (Edge &edge: edges) {
-            edge.reset();
-        }
-        for (Vertex &vertex: vertices) {
-            vertex.reset();
-        }
-        for (Business &bus: buses) {
-            bus.reset();
-        }
-        for (int i = 1; i < busesOriginResult.size(); i++) {
-            vector<Point> &result = busesOriginResult[i];
-            for (const Point &point: result) {
-                //只需要占用通道，顶点变换能力不需要，最初没有
-                for (int j = point.startChannelId; j <= point.endChannelId; j++) {
-                    edges[point.edgeId].channel[j] = i;
-                }
-            }
-        }
-        for (int i = 1; i <= N; ++i) {
-            searchGraph[i] = graph[i];
-        }
-        for (int i = 1; i < edges.size(); i++) {
-            Edge &edge = edges[i];
-            //计算表
-            updateEdgeChannelTable(edge);
-        }
-    }
-
-    unordered_map<int, vector<Point>>
-    getBaseLineResult(const vector<int> &affectBusinesses, vector<vector<Point>> &curBusesResult) {
-        unordered_map<int, vector<Point>> satisfyBusesResult;
-        for (int id: affectBusinesses) {
-            Business &business = buses[id];
-            vector<Point> path = aStarFindPath(business, curBusesResult[business.id]);
-            if (!path.empty()) {
-                //变通道次数得减回去
-                redoBusiness(business, path, curBusesResult[business.id]);
-                satisfyBusesResult[business.id] = std::move(path);
-            }
-        }
-        return satisfyBusesResult;
-    }
-
-    double getEstimateScore(const unordered_map<int, vector<Point>> &satisfyBusesResult) {
-        int totalValue = 0;
-        for (const auto &entry: satisfyBusesResult) {
-            totalValue += buses[entry.first].value;
-        }
-        //原则，value，width大的尽量短一点
-        double plus = 0;
-        for (const auto &entry: satisfyBusesResult) {
-            int id = entry.first;
-            const vector<Point> &newPath = entry.second;
-            const Business &business = buses[id];
-            int size = int(newPath.size());
-            int width = business.needChannelLength;
-            int value = business.value;//价值高，size小好，width暂时不用吧
-            plus += 1.0 * value / size;
-        }
-        return totalValue * 1e9 + plus + 1;
-    }
-
-    void tryToAddBusiness(vector<int> &affectBusinesses,
-                          unordered_map<int, vector<Point>> &satisfyBusesResult,
-                          vector<vector<Point>> &curBusesResult) {
-        shuffle(affectBusinesses.begin(), affectBusinesses.end(), rad);
-        for (int &id: affectBusinesses) {
-            Business &business = buses[id];
-            if (satisfyBusesResult.count(business.id)) {
-                vector<Point> &newPath = satisfyBusesResult[business.id];
-                vector<Point> &originPath = curBusesResult[business.id];
-                undoBusiness(business, newPath, originPath);
-                //尝试更换路径
-                for (Point &point: newPath) {
-                    edges[point.edgeId].weight++;
-                }
-                vector<Point> otherPath = aStarFindPath(business, originPath);
-                for (Point point: newPath) {
-                    edges[point.edgeId].weight--;
-                }
-                if (otherPath.empty()) {
-                    //保持不变，此时可能有重复顶点
-                    redoBusiness(business, newPath, originPath);
-                } else {
-                    satisfyBusesResult[business.id] = otherPath;
-                    redoBusiness(business, otherPath, originPath);
-                }
-            }
-        }
-
-        for (int &id: affectBusinesses) {
-            Business &business = buses[id];
-            if (!satisfyBusesResult.count(business.id)) {
-                vector<Point> &originPath = curBusesResult[business.id];
-                const vector<Point> &path = aStarFindPath(business, originPath);
-                if (!path.empty()) {
-                    satisfyBusesResult[business.id] = path;
-                    redoBusiness(business, path, originPath);
-                }
-            }
-        }
-    }
-
-    void compressPath(vector<int> &affectBusinesses, unordered_map<int, vector<Point>> &satisfyBusesResult,
-                      vector<vector<Point>> &curBusesResult) {
-        sort(affectBusinesses.begin(), affectBusinesses.end(), [&](int aId, int bId) {
-            return buses[aId] < buses[bId];
-        });
-        for (int &id: affectBusinesses) {
-            Business &business = buses[id];
-            if (satisfyBusesResult.count(business.id)) {
-                vector<Point> &newPath = satisfyBusesResult[business.id];
-                vector<Point> &originPath = curBusesResult[business.id];
-                undoBusiness(business, newPath, originPath);
-                //尝试缩短路径路径
-                vector<Point> otherPath = aStarFindPath(business, curBusesResult[business.id]);
-                if (otherPath.empty()) {
-                    redoBusiness(business, newPath, originPath);
-                } else {
-                    redoBusiness(business, otherPath, originPath);
-                    satisfyBusesResult[business.id] = otherPath;
-                }
-
-            }
-        }
-    }
-
-    void undoResult(const unordered_map<int, vector<Point>> &result, const vector<vector<Point>> &curBusesResult) {
-        for (const auto &entry: result) {
-            int id = entry.first;
-            const vector<Point> &newPath = entry.second;
-            Business &business = buses[id];
-            undoBusiness(business, newPath, curBusesResult[business.id]);
-        }
-    }
-
-    void redoResult(vector<int> &affectBusinesses, unordered_map<int, vector<Point>> &result,
-                    vector<vector<Point>> &curBusesResult) {
-        for (const auto &entry: result) {
-            int id = entry.first;
-            const vector<Point> &newPath = entry.second;
-            const vector<Point> &originPath = curBusesResult[id];
-            const Business &business = buses[id];
-            //先加入新路径
-            redoBusiness(business, newPath, originPath);
-            //未错误，误报
-            undoBusiness(business, originPath, newPath);
-            curBusesResult[business.id] = newPath;
-        }
-        for (const int &id: affectBusinesses) {
-            Business &business = buses[id];
-            if (!result.count(business.id)) {
-                business.die = true;//死掉了，以后不调度
-            }
-        }
-    }
-
-    void dispatch(double avgBusEveryCValue, int failEdgeId, vector<vector<Point>> &curBusesResult) {
-        assert(failEdgeId != 0);
-        curHandleCount++;
-        edges[failEdgeId].die = true;
-
-        //1.求受影响的业务
-        vector<int> affectBusinesses;
-        for (int busId: edges[failEdgeId].channel) {
-            if (busId != -1 && !buses[busId].die) {
-                assert(buses[busId].id == busId);
-                if (!affectBusinesses.empty() && affectBusinesses[affectBusinesses.size() - 1]
-                                                 == busId) {
-                    continue;
-                }
-                affectBusinesses.push_back(busId);
-            }
-        }
-        sort(affectBusinesses.begin(), affectBusinesses.end(), [&](int aId, int bId) {
-            return buses[aId] < buses[bId];
-        });
-        maxDieCount += int(affectBusinesses.size());
-
-
-        //2.去掉不可能寻到路径的业务，但是因为有重边重顶点，不一定准确，大概准确
-        vector<int> tmp;//还是稍微有点用，减少个数
-        for (int id: affectBusinesses) {
-            Business &business = buses[id];
-            vector<Point> path = aStarFindPath(business, curBusesResult[business.id]);
-            if (!path.empty()) {
-                tmp.push_back(business.id);
-            } else {
-                business.die = true;//死了没得救
-            }
-        }
-        affectBusinesses = std::move(tmp);
-
-
-        //3.循环调度,求出最优解保存
-        unordered_map<int, vector<Point>> bestResult;
-        double bestScore = -1;
-        int remainTime = (int) (SEARCH_TIME - 1000 - runtime());//留1s阈值
-        int remainMaxCount = max(1, MAX_E_FAIL_COUNT - curHandleCount + 1);
-        int maxRunTime = remainTime / remainMaxCount;
-        unsigned long long startTime = runtime();
-        int iteration = 0;
-        while ((((runtime() - startTime) < maxRunTime) && IS_ONLINE)
-               || (!IS_ONLINE && iteration < MIN_ITERATION_COUNT)
-                ) {
-            for (int j = 1; j <= N; j++) {
-                shuffle(searchGraph[j].begin(), searchGraph[j].end(), rad);
-            }
-            unordered_map<int, vector<Point>> satisfyBusesResult = getBaseLineResult(affectBusinesses,
-                                                                                     curBusesResult);
-
-            //todo 可以注释掉 1. 考虑死掉一些业务,腾出空间给新的断边寻路?
-            unordered_set<int> shouldDieIds;
-            for (const auto &entry: satisfyBusesResult) {
-                int id = entry.first;
-                const vector<Point> &newPath = entry.second;
-                Business &business = buses[id];
-                const vector<Point> &originPath = curBusesResult[business.id];
-                if (originPath.size() >= newPath.size()) {
-                    continue;
-                }
-                double curEveryCValue = 1.0 * business.value /
-                                        (business.needChannelLength
-                                         * int(newPath.size() - originPath.size()));
-                if (curEveryCValue < SHOULD_DIE_FACTOR * avgBusEveryCValue
-                    && 1.0 * recoveryCount / maxDieCount < SHOULD_DIE_MIN_RECOVER_RATE) {
-                    //救活率不高的情况下，选择放弃一些低价值货物
-                    undoBusiness(business, newPath, originPath);
-                    shouldDieIds.insert(id);
-                }
-            }
-            for (const auto &id: shouldDieIds) {
-                satisfyBusesResult.erase(id);
-            }
-
-            //2.算分
-            double curScore_ = getEstimateScore(satisfyBusesResult);
-            if (curScore_ > bestScore) {
-                //打分
-                bestScore = curScore_;
-                bestResult = satisfyBusesResult;
-            }
-
-
-            int originSize = int(satisfyBusesResult.size());
-//                    tryToAddBusiness(affectBusinesses, satisfyBusesResult, curBusesResult);
-//                    int curSize = int(satisfyBusesResult.size());
-//                    if (curSize > originSize) {
-//                        //缩短路径
-//                        compressPath(affectBusinesses, satisfyBusesResult, curBusesResult);
-//                        curScore = getEstimateScore(satisfyBusesResult);
-//                        if (curScore > bestScore) {
-//                            //打分
-//                            bestScore = curScore;
-//                            bestResult = satisfyBusesResult;
-//                        }
-//                    }
-            shuffle(affectBusinesses.begin(), affectBusinesses.end(), rad);
-            undoResult(satisfyBusesResult, curBusesResult);//回收结果，下次迭代
-            iteration++;
-        }
-        recoveryCount += int(bestResult.size());
-        redoResult(affectBusinesses, bestResult, curBusesResult);
-        printResult(bestResult);
-    }
-
+    //主循环
     void mainLoop() {
         int t;
         scanf("%d", &t);
@@ -767,19 +707,22 @@ struct Strategy {
         for (int i = 1; i <= N; i++) {
             avgBusEveryCValue += buses[i].value;
         }
-
         avgBusEveryCValue = avgBusEveryCValue / (M * CHANNEL_COUNT);
+        int maxLength = INT_INF;//每一个测试场景的断边数，默认是无穷个，猜测每次都一样
         for (int i = 0; i < t; i++) {
             //邻接表
             vector<vector<Point>> curBusesResult = busesOriginResult;
+            int curLength = 0;
             while (true) {
                 int failEdgeId = -1;
                 scanf("%d", &failEdgeId);
                 if (failEdgeId == -1) {
                     break;
                 }
-                dispatch(avgBusEveryCValue, failEdgeId, curBusesResult);
+                curLength++;
+                dispatch(curLength < maxLength - REMAIN_COUNT_RECOVERY, avgBusEveryCValue, failEdgeId, curBusesResult);
             }
+            maxLength = curLength;
             int totalValue = 0;
             int remainValue = 0;
             for (int j = 1; j < buses.size(); j++) {
@@ -794,17 +737,8 @@ struct Strategy {
     }
 };
 
-inline void printError(const string &s) {
-
-    fprintf(stderr, "%s\n", s.c_str());
-    fflush(stderr);
-
-}
-
 int main() {
-    //        freopen("in.txt", "r", stdin);
-//        freopen("out.txt", "w", stdout);
-//    SetConsoleOutputCP ( CP_UTF8 ) ;
+    //    SetConsoleOutputCP ( CP_UTF8 ) ;
 //todo 1.估分问题，2.能否不要暴力穷举，加一个不暴力的方式3.重复边或者顶点问题未解决好，4.预测复赛改动点（节点失效or其他？）
     static Strategy strategy;
     if (fopen("../data/0/in.txt", "r") != nullptr) {
