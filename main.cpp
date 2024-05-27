@@ -14,6 +14,7 @@
 #include <map>
 #include <stack>
 #include <cstring>
+
 using namespace std;
 
 //迭代参数
@@ -45,6 +46,7 @@ inline void printError(const string &s) {
     fprintf(stderr, "%s\n", s.c_str());
     fflush(stderr);
 }
+
 //边
 struct Edge {
     int from{};
@@ -64,11 +66,13 @@ struct Edge {
         weight = 1;
     }
 };
+
 //邻接表的边
 struct NearEdge {
     int id;
     int to;
 };
+
 //业务
 struct Business {
     int id{};
@@ -87,6 +91,7 @@ struct Business {
     }
 
 };
+
 //顶点
 struct Vertex {
     int maxChangeCount{};
@@ -100,6 +105,7 @@ struct Vertex {
         die = false;
     }
 };
+
 //策略类
 struct Strategy {
     int N{};//节点数
@@ -133,8 +139,8 @@ struct Strategy {
             , parentStartChannel[CHANNEL_COUNT + 1][MAX_N + 1]
             , parentVertexId[CHANNEL_COUNT + 1][MAX_N + 1]
             , timestamp[CHANNEL_COUNT + 1][MAX_N + 1]
-            , conflictPoints[MAX_M + 1][MAX_N + 1]
             , timestampId = 1;//距离
+            static bool conflictPoints[MAX_M + 1][MAX_N + 1];
             timestampId++;
             struct PointWithChannelDeep {
                 int vertexId;
@@ -156,9 +162,9 @@ struct Strategy {
 
             while (!cacheMap.empty()) {
                 pair<const int, stack<PointWithChannelDeep>> &entry = *cacheMap.begin();
-                int totalDeep = entry.first;
+                const int totalDeep = entry.first;
                 stack<PointWithChannelDeep> &sk = entry.second;
-                PointWithChannelDeep poll = sk.top();
+                const PointWithChannelDeep poll = sk.top();
                 sk.pop();
                 if (poll.deep != dist[poll.startChannel][poll.vertexId]) {
                     if (sk.empty()) {
@@ -170,9 +176,9 @@ struct Strategy {
                     endChannel = poll.startChannel;
                     break;
                 }
-                int lastChannel = poll.startChannel;
+                const int lastChannel = poll.startChannel;
                 for (const NearEdge &nearEdge: searchGraph[poll.vertexId]) {
-                    int next = nearEdge.to;
+                    const int next = nearEdge.to;
                     if (parentVertexId[poll.startChannel][poll.vertexId] == next) {
                         //防止重边
                         continue;
@@ -185,9 +191,9 @@ struct Strategy {
                         continue;//顶点重复
                     }
                     const int *freeChannelTable = edge.freeChannelTable[width];
-                    for (int i = 1; i <= freeChannelTable[0]; i++) {
+                    for (int i = 1; i <= freeChannelTable[0]; ++i) {
                         count++;
-                        int startChannel = freeChannelTable[i];
+                        const int startChannel = freeChannelTable[i];
                         //用来穷举
                         int nextDistance = poll.deep + edge.weight * MAX_M;
                         if (startChannel != lastChannel) {
@@ -211,11 +217,8 @@ struct Strategy {
                         parentStartChannel[startChannel][next] = poll.startChannel;
                         parentEdgeId[startChannel][next] = nearEdge.id;
                         parentVertexId[startChannel][next] = poll.vertexId;
-                        PointWithChannelDeep pointWithDeep{next, startChannel, nextDistance};
+                        const PointWithChannelDeep pointWithDeep{next, startChannel, nextDistance};
                         nextDistance += MAX_M * minDistance[next][end];
-                        if (!cacheMap.count(nextDistance)) {
-                            cacheMap[nextDistance] = {};
-                        }
                         cacheMap[nextDistance].push(pointWithDeep);
                     }
                 }
