@@ -143,20 +143,20 @@ struct Strategy {
             static bool conflictPoints[MAX_M + 1][MAX_N + 1];
             timestampId++;
             struct PointWithChannelDeep {
-                int vertexId;
-                int startChannel;
+                int channelVertex;//前十六位是channel，后十六位是vertexId
                 int deep;
+
+                PointWithChannelDeep(int channelVertex, int deep) : channelVertex(channelVertex), deep(deep) {}
             };
             static map<int, stack<PointWithChannelDeep>> cacheMap;
             cacheMap.clear();
-            stack<PointWithChannelDeep> tmp;
+            stack<PointWithChannelDeep> &tmp = cacheMap[minDistance[start][end] * MAX_M];
             for (int i = 1; i <= CHANNEL_COUNT; ++i) {
                 dist[i][start] = 0;
                 timestamp[i][start] = timestampId;
                 parentVertexId[i][start] = -1;//起始点为-1顶点
-                tmp.push({start, i, 0});
+                tmp.emplace((i << 16) + start, 0);
             }
-            cacheMap[minDistance[start][end] * MAX_M] = std::move(tmp);
             int endChannel = -1;
             int count = 0;
 
@@ -166,20 +166,22 @@ struct Strategy {
                 stack<PointWithChannelDeep> &sk = entry.second;
                 const PointWithChannelDeep poll = sk.top();
                 sk.pop();
-                if (poll.deep != dist[poll.startChannel][poll.vertexId]) {
+                const int lastChannel = poll.channelVertex >> 16;
+                const int lastVertex = poll.channelVertex & 0xFFFF;
+                const int lastDeep = poll.deep;
+                if (lastDeep != dist[lastChannel][lastVertex]) {
                     if (sk.empty()) {
                         cacheMap.erase(totalDeep);
                     }
                     continue;
                 }
-                if (poll.vertexId == end) {
-                    endChannel = poll.startChannel;
+                if (lastVertex == end) {
+                    endChannel = lastChannel;
                     break;
                 }
-                const int lastChannel = poll.startChannel;
-                for (const NearEdge &nearEdge: searchGraph[poll.vertexId]) {
+                for (const NearEdge &nearEdge: searchGraph[lastVertex]) {
                     const int next = nearEdge.to;
-                    if (parentVertexId[poll.startChannel][poll.vertexId] == next) {
+                    if (parentVertexId[lastChannel][lastVertex] == next) {
                         //防止重边
                         continue;
                     }
@@ -195,13 +197,13 @@ struct Strategy {
                         count++;
                         const int startChannel = freeChannelTable[i];
                         //用来穷举
-                        int nextDistance = poll.deep + edge.weight * MAX_M;
+                        int nextDistance = lastDeep + edge.weight * MAX_M;
                         if (startChannel != lastChannel) {
-                            if (poll.vertexId == start || vertices[poll.vertexId].curChangeCount <= 0) {
+                            if (lastVertex == start || vertices[lastVertex].curChangeCount <= 0) {
                                 //开始节点一定不需要转换,而且也转换不了
                                 continue;
                             }
-                            if (vertices[poll.vertexId].die) {
+                            if (vertices[lastVertex].die) {
                                 continue;//todo 预测，die之后没法转换,die之后curchangeCount可以直接为0
                             }
                             nextDistance += 1;
@@ -214,12 +216,11 @@ struct Strategy {
                         }
                         timestamp[startChannel][next] = timestampId;
                         dist[startChannel][next] = nextDistance;
-                        parentStartChannel[startChannel][next] = poll.startChannel;
+                        parentStartChannel[startChannel][next] = lastChannel;
                         parentEdgeId[startChannel][next] = nearEdge.id;
-                        parentVertexId[startChannel][next] = poll.vertexId;
-                        const PointWithChannelDeep pointWithDeep{next, startChannel, nextDistance};
-                        nextDistance += MAX_M * minDistance[next][end];
-                        cacheMap[nextDistance].push(pointWithDeep);
+                        parentVertexId[startChannel][next] = lastVertex;
+                        cacheMap[nextDistance + MAX_M * minDistance[next][end]]
+                                .emplace((startChannel << 16) + next, nextDistance);
                     }
                 }
                 if (sk.empty()) {
