@@ -24,8 +24,8 @@ const bool IS_ONLINE = false;//是否使劲穷举
 
 //业务是否不救参数
 const int REMAIN_COUNT_RECOVERY = 5;//剩余几个一定救，只有t大于1有用，猜测线上每一次t的断边个数都一样
-const double SHOULD_DIE_FACTOR = 4.0;//不救哪些业务因子
-const double SHOULD_DIE_MIN_RECOVER_RATE = 0.75;//救活率低于这个才不救
+const double SHOULD_DIE_FACTOR = 5.0;//不救哪些业务因子
+const double SHOULD_DIE_MIN_RECOVER_RATE = 0.8;//救活率低于这个才不救
 
 //常量
 static int MAX_E_FAIL_COUNT = 6000;
@@ -547,7 +547,7 @@ struct Strategy {
         sort(affectBusinesses.begin(), affectBusinesses.end(), [&](int aId, int bId) {
             return buses[aId] < buses[bId];
         });
-        maxDieCount += int(affectBusinesses.size());
+        int affectSize = int(affectBusinesses.size());
 
 
         //2.去掉不可能寻到路径的业务，但是因为有重边重顶点，不一定准确，大概准确
@@ -595,7 +595,8 @@ struct Strategy {
                                         (business.needChannelLength
                                          * int(newPath.size() - originPath.size()));
                 if (curEveryCValue < SHOULD_DIE_FACTOR * avgBusEveryCValue
-                    && 1.0 * recoveryCount / maxDieCount < SHOULD_DIE_MIN_RECOVER_RATE
+                    && 1.0 * max(1, recoveryCount) / max(1, maxDieCount)
+                       < SHOULD_DIE_MIN_RECOVER_RATE
                     && deleteLongPathBus) {
                     //救活率不高的情况下，选择放弃一些低价值货物
                     undoBusiness(business, newPath, originPath);
@@ -620,6 +621,7 @@ struct Strategy {
             iteration++;
         }
         recoveryCount += int(bestResult.size());
+        maxDieCount += affectSize;
         redoResult(affectBusinesses, bestResult, curBusesResult);
         printResult(bestResult);
     }
