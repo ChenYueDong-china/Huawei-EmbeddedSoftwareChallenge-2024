@@ -134,11 +134,11 @@ struct Strategy {
         inline static vector<Point> aStar(int start, int end, int width, const vector<NearEdge> searchGraph[MAX_N + 1],
                                           const vector<Edge> &edges, const vector<Vertex> &vertices,
                                           int minDistance[MAX_N + 1][MAX_N + 1]) {
-            static int dist[CHANNEL_COUNT + 1][MAX_N + 1]
+            static int timestamp[CHANNEL_COUNT + 1][MAX_N + 1]
+            , dist[CHANNEL_COUNT + 1][MAX_N + 1]
             , parentEdgeId[CHANNEL_COUNT + 1][MAX_N + 1]
             , parentStartChannel[CHANNEL_COUNT + 1][MAX_N + 1]
             , parentVertexId[CHANNEL_COUNT + 1][MAX_N + 1]
-            , timestamp[CHANNEL_COUNT + 1][MAX_N + 1]
             , timestampId = 1;//距离
             static bool conflictPoints[MAX_M + 1][MAX_N + 1];
             timestampId++;
