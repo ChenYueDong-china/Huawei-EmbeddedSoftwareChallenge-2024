@@ -55,6 +55,7 @@ struct Edge {
     int weight{};
     int channel[CHANNEL_COUNT + 1]{};//0号不用
     int freeChannelTable[CHANNEL_COUNT + 1][CHANNEL_COUNT + 1]{};//打表加快搜索速度
+    bool widthChannelTable[CHANNEL_COUNT + 1][CHANNEL_COUNT + 1]{};//指示某个宽度某条通道是否被占用
     Edge() {
         memset(channel, -1, sizeof(channel));
         weight = 1;
@@ -160,7 +161,6 @@ struct Strategy {
                 tmp.emplace((i << 16) + start, 0);
             }
             int endChannel = -1;
-            int count = 0;
             while (!cacheMap.empty()) {
                 pair<const int, stack<PointWithChannelDeep>> &entry = *cacheMap.begin();
                 const int totalDeep = entry.first;
@@ -193,22 +193,15 @@ struct Strategy {
                     if (conflictPoints[nearEdge.id][next]) {
                         continue;//顶点重复
                     }
-                    const int *freeChannelTable = edge.freeChannelTable[width];
-                    for (int i = 1; i <= freeChannelTable[0]; ++i) {
-                        count++;
-                        const int startChannel = freeChannelTable[i];
-                        //用来穷举
-                        int nextDistance = lastDeep + edge.weight * MAX_M;
-                        if (startChannel != lastChannel) {
-                            if (lastVertex == start || vertices[lastVertex].curChangeCount <= 0) {
-                                //开始节点一定不需要转换,而且也转换不了
-                                continue;
-                            }
-                            if (vertices[lastVertex].die) {
-                                continue;//todo 预测，die之后没法转换,die之后curchangeCount可以直接为0
-                            }
-                            nextDistance += 1;
+                    if (lastVertex == start
+                        || vertices[lastVertex].curChangeCount <= 0
+                        || vertices[lastVertex].die) {
+                        //没法变通道
+                        if (!edge.widthChannelTable[width][lastChannel]) {
+                            continue;//不空闲直接结束
                         }
+                        const int startChannel = lastChannel;
+                        int nextDistance = lastDeep + edge.weight * MAX_M;//不用变通道
                         if (common[startChannel][next].timestamp == timestampId &&
                             common[startChannel][next].dist <= nextDistance) {
                             //访问过了，且距离没变得更近
@@ -220,6 +213,28 @@ struct Strategy {
                         common[startChannel][next].parentEdgeId = nearEdge.id;
                         cacheMap[nextDistance + MAX_M * minDistance[next][end]]
                                 .emplace((startChannel << 16) + next, nextDistance);
+                    } else {
+                        //能变通道
+                        const int *freeChannelTable = edge.freeChannelTable[width];
+                        for (int i = 1; i <= freeChannelTable[0]; ++i) {
+                            const int startChannel = freeChannelTable[i];
+                            //用来穷举
+                            int nextDistance = lastDeep + edge.weight * MAX_M;
+                            if (startChannel != lastChannel) {
+                                nextDistance += 1;//变通道距离加1
+                            }
+                            if (common[startChannel][next].timestamp == timestampId &&
+                                common[startChannel][next].dist <= nextDistance) {
+                                //访问过了，且距离没变得更近
+                                continue;
+                            }
+                            common[startChannel][next].timestamp = timestampId;
+                            common[startChannel][next].dist = nextDistance;
+                            common[startChannel][next].parentChannelVertex = (lastChannel << 16) + lastVertex;
+                            common[startChannel][next].parentEdgeId = nearEdge.id;
+                            cacheMap[nextDistance + MAX_M * minDistance[next][end]]
+                                    .emplace((startChannel << 16) + next, nextDistance);
+                        }
                     }
                 }
                 if (sk.empty()) {
@@ -340,6 +355,7 @@ struct Strategy {
         const int *channel = edge.channel;
         int (*freeChannelTable)[CHANNEL_COUNT + 1] = edge.freeChannelTable;
         int freeLength = 0;
+        memset(edge.widthChannelTable, false, sizeof edge.widthChannelTable);
         for (int i = 1; i <= CHANNEL_COUNT; i++) {
             freeChannelTable[i][0] = 0;//长度重新置为0
         }
@@ -357,9 +373,11 @@ struct Strategy {
                 for (int j = freeLength; j > 0; j--) {
                     int start = i - j + 1;
                     freeChannelTable[j][++freeChannelTable[j][0]] = start;
+                    edge.widthChannelTable[j][start] = true;
                 }
             }
         }
+
     }
 
     //在老路径基础上，回收新路径
