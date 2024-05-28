@@ -437,7 +437,7 @@ struct Strategy {
     }
 
     //aStar寻路
-    vector<Point> aStarFindPath(Business &business, vector<Point> &originPath) {
+    inline vector<Point> aStarFindPath(Business &business, vector<Point> &originPath) {
         int from = business.from;
         int to = business.to;
         int width = business.needChannelLength;
@@ -505,7 +505,7 @@ struct Strategy {
     }
 
     //给路径打分，随机穷举使用
-    double getEstimateScore(const unordered_map<int, vector<Point>> &satisfyBusesResult) {
+    inline double getEstimateScore(const unordered_map<int, vector<Point>> &satisfyBusesResult) {
         int totalValue = 0;
         for (const auto &entry: satisfyBusesResult) {
             totalValue += buses[entry.first].value;
@@ -525,7 +525,7 @@ struct Strategy {
     }
 
     //简单获得一个基础分
-    unordered_map<int, vector<Point>>
+    inline unordered_map<int, vector<Point>>
     getBaseLineResult(const vector<int> &affectBusinesses, vector<vector<Point>> &curBusesResult) {
         unordered_map<int, vector<Point>> satisfyBusesResult;
         for (int id: affectBusinesses) {
@@ -541,7 +541,7 @@ struct Strategy {
     }
 
     //核心调度函数
-    void
+    inline void
     dispatch(bool deleteLongPathBus, double avgBusEveryCValue, int failEdgeId, vector<vector<Point>> &curBusesResult) {
         assert(failEdgeId != 0);
         curHandleCount++;
@@ -678,11 +678,9 @@ struct Strategy {
             for (int j = 0; j < S; j++) {
                 int edgeId;
                 scanf("%d", &edgeId);
-                for (int k = L; k <= R; k++) {
-                    edges[edgeId].channel[k] = i;
-                }
                 busesOriginResult[i].push_back({edgeId, L, R});
             }
+            redoBusiness(buses[i], busesOriginResult[i], {});//防止复赛修改为初始业务也能变通道
         }
 
 
