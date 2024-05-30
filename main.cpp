@@ -23,7 +23,7 @@ const int MIN_ITERATION_COUNT = 1;//最低穷举次数
 const bool IS_ONLINE = false;//是否使劲穷举
 
 //业务是否不救参数
-const int REMAIN_COUNT_RECOVERY = 5;//剩余几个一定救，只有t大于1有用，猜测线上每一次t的断边个数都一样
+const int REMAIN_COUNT_RECOVERY = 10;//剩余几个一定救，只有t大于1有用，猜测线上每一次t的断边个数都一样
 const double SHOULD_DIE_FACTOR = 5.0;//不救哪些业务因子
 const double SHOULD_DIE_MIN_RECOVER_RATE = 0.8;//救活率低于这个才不救
 
@@ -52,19 +52,16 @@ struct Edge {
     int from{};
     int to{};
     bool die{};
-    int weight{};
     int channel[CHANNEL_COUNT + 1]{};//0号不用
     int freeChannelTable[CHANNEL_COUNT + 1][CHANNEL_COUNT + 1]{};//打表加快搜索速度
     bool widthChannelTable[CHANNEL_COUNT + 1][CHANNEL_COUNT + 1]{};//指示某个宽度某条通道是否被占用
     Edge() {
         memset(channel, -1, sizeof(channel));
-        weight = 1;
     }
 
     void reset() {
         memset(channel, -1, sizeof(channel));
         die = false;//没有断掉
-        weight = 1;
     }
 };
 
@@ -154,6 +151,7 @@ struct Strategy {
             timestampId++;
             cacheMap.clear();
             stack<PointWithChannelDeep> &tmp = cacheMap[minDistance[start][end] * MAX_M];
+            //往上丢是最好的，因为测试用例都往下丢，往上能流出更多空间
             for (int i = 1; i <= CHANNEL_COUNT; ++i) {
                 common[i][start].dist = 0;
                 common[i][start].timestamp = timestampId;
@@ -175,6 +173,10 @@ struct Strategy {
                         cacheMap.erase(totalDeep);
                     }
                     continue;
+                }
+                if (lastDeep > MAX_M * MAX_N) {
+                    //一定无路可走
+                    break;
                 }
                 if (lastVertex == end) {
                     endChannel = lastChannel;
@@ -201,7 +203,7 @@ struct Strategy {
                             continue;//不空闲直接结束
                         }
                         const int startChannel = lastChannel;
-                        int nextDistance = lastDeep + edge.weight * MAX_M;//不用变通道
+                        int nextDistance = lastDeep +  MAX_M;//不用变通道
                         if (common[startChannel][next].timestamp == timestampId &&
                             common[startChannel][next].dist <= nextDistance) {
                             //访问过了，且距离没变得更近
@@ -219,7 +221,7 @@ struct Strategy {
                         for (int i = 1; i <= freeChannelTable[0]; ++i) {
                             const int startChannel = freeChannelTable[i];
                             //用来穷举
-                            int nextDistance = lastDeep + edge.weight * MAX_M;
+                            int nextDistance = lastDeep + MAX_M;
                             if (startChannel != lastChannel) {
                                 nextDistance += 1;//变通道距离加1
                             }
