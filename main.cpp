@@ -36,10 +36,10 @@ const int CHANNEL_COUNT = 40;
 const auto programStartTime = std::chrono::steady_clock::now();
 const int INT_INF = 0x7f7f7f7f;
 
-inline unsigned long long runtime() {
+inline int runtime() {
     auto now = std::chrono::steady_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(now - programStartTime);
-    return duration.count();
+    return int(duration.count());
 }
 
 inline void printError(const string &s) {
@@ -203,7 +203,7 @@ struct Strategy {
                             continue;//不空闲直接结束
                         }
                         const int startChannel = lastChannel;
-                        int nextDistance = lastDeep +  MAX_M;//不用变通道
+                        int nextDistance = lastDeep + MAX_M;//不用变通道
                         if (common[startChannel][next].timestamp == timestampId &&
                             common[startChannel][next].dist <= nextDistance) {
                             //访问过了，且距离没变得更近
@@ -443,12 +443,12 @@ struct Strategy {
         int from = business.from;
         int to = business.to;
         int width = business.needChannelLength;
-        unsigned long long int l1 = runtime();
+        int l1 = runtime();
         undoBusiness(business, originPath, {});
         vector<Point> path = SearchUtils::aStar(from, to, width,
                                                 searchGraph, edges, vertices, minDistance);
         redoBusiness(business, originPath, {});
-        unsigned long long int r1 = runtime();
+        int r1 = runtime();
         searchTime += r1 - l1;
         return path;
     }
@@ -584,10 +584,10 @@ struct Strategy {
         //3.循环调度,求出最优解保存
         unordered_map<int, vector<Point>> bestResult;
         double bestScore = -1;
-        int remainTime = (int) (SEARCH_TIME - 1000 - runtime());//留1s阈值
+        int remainTime = (int) (SEARCH_TIME - 1000 - int(runtime()));//留1s阈值
         int remainMaxCount = max(1, MAX_E_FAIL_COUNT - curHandleCount + 1);
         int maxRunTime = remainTime / remainMaxCount;
-        unsigned long long startTime = runtime();
+        int startTime = runtime();
         int iteration = 0;
         while ((((runtime() - startTime) < maxRunTime) && IS_ONLINE)
                || (!IS_ONLINE && iteration < MIN_ITERATION_COUNT)
@@ -766,13 +766,13 @@ int main() {
         string path = "../data/";
         MAX_E_FAIL_COUNT = 12000;
         for (int i = 0; i < 1; i++) {
-            unsigned long long start = runtime();
+            int start = runtime();
             freopen((path + to_string(i) + "/in.txt").c_str(), "r", stdin);
             freopen((path + to_string(i) + "/out.txt").c_str(), "w", stdout);
             strategy = {};
             strategy.init();
             strategy.mainLoop();
-            unsigned long long end = runtime();
+            int end = runtime();
             printError("runTime:" + to_string(end - start) + ",aStarTime:" + to_string(strategy.searchTime) +
                        ",maxScore:" +
                        to_string(strategy.maxScore).substr(0, to_string(strategy.maxScore).length() - 3) +
