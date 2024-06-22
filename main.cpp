@@ -439,7 +439,7 @@ struct Strategy {
     }
 
     //aStar寻路
-    inline vector<Point> aStarFindPath(Business &business, vector<Point> &originPath) {
+    inline vector<Point> aStarFindPath(Business &business, vector<Point> &originPath, bool deleteLongPathBus) {
         int from = business.from;
         int to = business.to;
         int width = business.needChannelLength;
@@ -447,8 +447,8 @@ struct Strategy {
         undoBusiness(business, originPath, {});
         vector<Point> path = SearchUtils::aStar(from, to, width,
                                                 searchGraph, edges, vertices, minDistance,
-                                                max(int(int(originPath.size())
-                                                        * 1.6), 6));
+                                                deleteLongPathBus ? max(int(int(originPath.size())
+                                                                            * 1.6), 6) : INT_INF / MAX_M);
         redoBusiness(business, originPath, {});
         int r1 = runtime();
         searchTime += r1 - l1;
@@ -530,11 +530,12 @@ struct Strategy {
 
     //简单获得一个基础分
     inline unordered_map<int, vector<Point>>
-    getBaseLineResult(const vector<int> &affectBusinesses, vector<vector<Point>> &curBusesResult) {
+    getBaseLineResult(const vector<int> &affectBusinesses, vector<vector<Point>> &curBusesResult,
+                      bool deleteLongPathBus) {
         unordered_map<int, vector<Point>> satisfyBusesResult;
         for (int id: affectBusinesses) {
             Business &business = buses[id];
-            vector<Point> path = aStarFindPath(business, curBusesResult[business.id]);
+            vector<Point> path = aStarFindPath(business, curBusesResult[business.id], deleteLongPathBus);
             if (!path.empty()) {
                 //变通道次数得减回去
                 redoBusiness(business, path, curBusesResult[business.id]);
@@ -550,6 +551,18 @@ struct Strategy {
         assert(failEdgeId != 0);
         curHandleCount++;
         edges[failEdgeId].die = true;
+        for (auto i = searchGraph[edges[failEdgeId].from].begin(); i < searchGraph[edges[failEdgeId].from].end(); ++i) {
+            if (i->id == failEdgeId) {
+                searchGraph[edges[failEdgeId].from].erase(i);
+                break;
+            }
+        }
+        for (auto i = searchGraph[edges[failEdgeId].to].begin(); i < searchGraph[edges[failEdgeId].to].end(); ++i) {
+            if (i->id == failEdgeId) {
+                searchGraph[edges[failEdgeId].to].erase(i);
+                break;
+            }
+        }
 
         //1.求受影响的业务
         vector<int> affectBusinesses;
@@ -573,7 +586,7 @@ struct Strategy {
         vector<int> tmp;//还是稍微有点用，减少个数
         for (int id: affectBusinesses) {
             Business &business = buses[id];
-            vector<Point> path = aStarFindPath(business, curBusesResult[business.id]);
+            vector<Point> path = aStarFindPath(business, curBusesResult[business.id], false);
             if (!path.empty()) {
                 tmp.push_back(business.id);
             } else {
@@ -592,14 +605,18 @@ struct Strategy {
         int startTime = runtime();
         int iteration = 0;
         while ((((runtime() - startTime) < maxRunTime) && IS_ONLINE)
-               || (!IS_ONLINE && iteration < MIN_ITERATION_COUNT)
+               || (iteration < MIN_ITERATION_COUNT)
                 ) {
             for (int j = 1; j <= N; j++) {
                 shuffle(searchGraph[j].begin(), searchGraph[j].end(), rad);
             }
-            unordered_map<int, vector<Point>> satisfyBusesResult = getBaseLineResult(affectBusinesses,
-                                                                                     curBusesResult);
 
+            unordered_map<int, vector<Point>> satisfyBusesResult = getBaseLineResult(affectBusinesses,
+                                                                                     curBusesResult,
+                                                                                     1.0 * max(1, recoveryCount) /
+                                                                                     max(1, maxDieCount)
+                                                                                     < SHOULD_DIE_MIN_RECOVER_RATE &&
+                                                                                     deleteLongPathBus);
             // 考虑死掉一些业务,腾出空间给新的断边寻路?
             unordered_set<int> shouldDieIds;
             for (const auto &entry: satisfyBusesResult) {
@@ -613,14 +630,14 @@ struct Strategy {
                 double curEveryCValue = 1.0 * business.value /
                                         (business.needChannelLength
                                          * int(newPath.size() - originPath.size()));
-                if (curEveryCValue < SHOULD_DIE_FACTOR * avgBusEveryCValue
-                    && 1.0 * max(1, recoveryCount) / max(1, maxDieCount)
-                       < SHOULD_DIE_MIN_RECOVER_RATE
-                    && deleteLongPathBus) {
-                    //救活率不高的情况下，选择放弃一些低价值货物
-                    undoBusiness(business, newPath, originPath);
-                    shouldDieIds.insert(id);
-                }
+//                if (curEveryCValue < SHOULD_DIE_FACTOR * avgBusEveryCValue
+//                    && 1.0 * max(1, recoveryCount) / max(1, maxDieCount)
+//                       < SHOULD_DIE_MIN_RECOVER_RATE
+//                    && deleteLongPathBus) {
+//                    //救活率不高的情况下，选择放弃一些低价值货物
+//                    undoBusiness(business, newPath, originPath);
+//                    shouldDieIds.insert(id);
+//                }
             }
             for (const auto &id: shouldDieIds) {
                 satisfyBusesResult.erase(id);
