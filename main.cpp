@@ -138,42 +138,30 @@ struct Strategy {
                 int parentChannelVertex;
                 int parentEdgeId;
             };
-            struct PointWithChannelDeep {
-                int channelVertex;//前十六位是channel，后十六位是vertexId
-                int deep;
-
-                PointWithChannelDeep(int channelVertex, int deep) : channelVertex(channelVertex), deep(deep) {}
-            };
             static Common common[CHANNEL_COUNT + 1][MAX_N + 1];
             static int timestampId = 1;//距离
             static bool conflictPoints[MAX_M + 1][MAX_N + 1];
-            static map<int, stack<PointWithChannelDeep>> cacheMap;
+            static map<int, stack<int>> cacheMap;
             timestampId++;
             cacheMap.clear();
-            stack<PointWithChannelDeep> &tmp = cacheMap[minDistance[start][end] * MAX_M];
+            stack<int> &tmp = cacheMap[minDistance[start][end] * MAX_M];
             //往上丢是最好的，因为测试用例都往下丢，往上能流出更多空间
             for (int i = 1; i <= CHANNEL_COUNT; ++i) {
                 common[i][start].dist = 0;
                 common[i][start].timestamp = timestampId;
                 common[i][start].parentChannelVertex = (i << 16) + 0;//起始点为0顶点
-                tmp.emplace((i << 16) + start, 0);
+                tmp.emplace((i << 16) + start);
             }
             int endChannel = -1;
             while (!cacheMap.empty()) {
-                pair<const int, stack<PointWithChannelDeep>> &entry = *cacheMap.begin();
+                pair<const int, stack<int>> &entry = *cacheMap.begin();
                 const int totalDeep = entry.first;
-                stack<PointWithChannelDeep> &sk = entry.second;
-                const PointWithChannelDeep poll = sk.top();
+                stack<int> &sk = entry.second;
+                const int poll = sk.top();
                 sk.pop();
-                const int lastChannel = poll.channelVertex >> 16;
-                const int lastVertex = poll.channelVertex & 0xFFFF;
-                const int lastDeep = poll.deep;
-                if (lastDeep != common[lastChannel][lastVertex].dist) {
-                    if (sk.empty()) {
-                        cacheMap.erase(totalDeep);
-                    }
-                    continue;
-                }
+                const int lastChannel = poll >> 16;
+                const int lastVertex = poll & 0xFFFF;
+                const int lastDeep = common[lastChannel][lastVertex].dist;
                 if (lastDeep > MAX_M * MAX_N || lastDeep > MAX_M * maxDeep) {
                     //一定无路可走
                     break;
@@ -214,7 +202,7 @@ struct Strategy {
                         common[startChannel][next].parentChannelVertex = (lastChannel << 16) + lastVertex;
                         common[startChannel][next].parentEdgeId = nearEdge.id;
                         cacheMap[nextDistance + MAX_M * minDistance[next][end]]
-                                .emplace((startChannel << 16) + next, nextDistance);
+                                .emplace((startChannel << 16) + next);
                     } else {
                         //能变通道
                         const int *freeChannelTable = edge.freeChannelTable[width];
@@ -235,7 +223,7 @@ struct Strategy {
                             common[startChannel][next].parentChannelVertex = (lastChannel << 16) + lastVertex;
                             common[startChannel][next].parentEdgeId = nearEdge.id;
                             cacheMap[nextDistance + MAX_M * minDistance[next][end]]
-                                    .emplace((startChannel << 16) + next, nextDistance);
+                                    .emplace((startChannel << 16) + next);
                         }
                     }
                 }
