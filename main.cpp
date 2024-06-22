@@ -131,7 +131,7 @@ struct Strategy {
     struct SearchUtils {
         inline static vector<Point> aStar(int start, int end, int width, const vector<NearEdge> searchGraph[MAX_N + 1],
                                           const vector<Edge> &edges, const vector<Vertex> &vertices,
-                                          int minDistance[MAX_N + 1][MAX_N + 1]) {
+                                          int minDistance[MAX_N + 1][MAX_N + 1], int maxDeep) {
             struct Common {
                 int timestamp;
                 int dist;
@@ -174,7 +174,7 @@ struct Strategy {
                     }
                     continue;
                 }
-                if (lastDeep > MAX_M * MAX_N) {
+                if (lastDeep > MAX_M * MAX_N || lastDeep > MAX_M * maxDeep) {
                     //一定无路可走
                     break;
                 }
@@ -279,7 +279,7 @@ struct Strategy {
                         tmpFrom = edge1.from == tmpFrom ? edge1.to : edge1.from;
                     }
                     conflictPoints[lockE][lockV] = true;
-                    path = aStar(start, end, width, searchGraph, edges, vertices, minDistance);
+                    path = aStar(start, end, width, searchGraph, edges, vertices, minDistance, maxDeep);
                     conflictPoints[lockE][lockV] = false;
                     return path;
                 }
@@ -446,7 +446,9 @@ struct Strategy {
         int l1 = runtime();
         undoBusiness(business, originPath, {});
         vector<Point> path = SearchUtils::aStar(from, to, width,
-                                                searchGraph, edges, vertices, minDistance);
+                                                searchGraph, edges, vertices, minDistance,
+                                                max(int(int(originPath.size())
+                                                        * 1.6), 6));
         redoBusiness(business, originPath, {});
         int r1 = runtime();
         searchTime += r1 - l1;
