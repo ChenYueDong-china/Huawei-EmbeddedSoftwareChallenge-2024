@@ -436,7 +436,7 @@ struct Strategy {
         vector<Point> path = SearchUtils::aStar(from, to, width,
                                                 searchGraph, edges, vertices, minDistance,
                                                 deleteLongPathBus ? max(int(int(originPath.size())
-                                                                            * 1.6), 6) : INT_INF / MAX_M);
+                                                                            * 1.5), 5) : int(originPath.size()) * 10);
         redoBusiness(business, originPath, {});
         int r1 = runtime();
         searchTime += r1 - l1;
