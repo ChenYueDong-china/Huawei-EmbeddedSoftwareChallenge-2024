@@ -349,6 +349,8 @@ struct Strategy {
         for (int i = 1; i <= CHANNEL_COUNT; i++) {
             freeChannelTable[i][0] = 0;//长度重新置为0
         }
+        static int widthLength[CHANNEL_COUNT + 1];
+        memset(widthLength, 0, sizeof widthLength);
         for (int i = 1; i <= CHANNEL_COUNT; i++) {
             if (channel[i] == -1) {
                 if (channel[i] == channel[i - 1]) {
@@ -362,11 +364,29 @@ struct Strategy {
             if (freeLength > 0) {
                 for (int j = freeLength; j > 0; j--) {
                     int start = i - j + 1;
+                    widthLength[start] = freeLength;
                     freeChannelTable[j][++freeChannelTable[j][0]] = start;
                     edge.widthChannelTable[j][start] = true;
                 }
             }
         }
+
+        //todo 待测试，不一定有效
+//        for (int i = 1; i <= CHANNEL_COUNT; ++i) {
+//            int end = freeChannelTable[i][0];
+//            if (end == 0) {
+//                continue;
+//            }
+//            sort(freeChannelTable[i] + 1, freeChannelTable[i] + end + 1, [&](int x, int y) {
+//                if (widthLength[x] != widthLength[y]) {
+//                    //宽的在前面，会导致选窄的
+//                    return widthLength[x] > widthLength[y];
+//                } else {
+//                    //小的在前面，会导致选高的
+//                    return x < y;
+//                }
+//            });
+//        }
 
     }
 
