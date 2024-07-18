@@ -1259,7 +1259,7 @@ struct Strategy {
                         maxScore = bestLengthAndScore[1];
                         bestSubOnlyOne = subOnlyOne;
                         bestType = i;
-                        bestSample = {candidateSample.begin(),candidateSample.begin()+bestLengthAndScore[0]};
+                        bestSample = {candidateSample.begin(), candidateSample.begin() + bestLengthAndScore[0]};
                     }
                     bestSample = candidateSample;
                 }
@@ -1281,44 +1281,13 @@ struct Strategy {
                 vector<int> bestLengthAndScore = getBestLengthAndScore(curSamples, candidateSample);
                 if (bestLengthAndScore[1] > maxScore) {
                     maxScore = bestLengthAndScore[1];
-                    bestSample = {candidateSample.begin(),candidateSample.begin()+bestLengthAndScore[0]};
+                    bestSample = {candidateSample.begin(), candidateSample.begin() + bestLengthAndScore[0]};
                 }
             }
             curSamples.push_back(bestSample);
             //System.err.println("maxScore:" + maxScore + ",length:" + bestLength);
         }
-        vector<int> bestMaxLengths;
-        for (vector<int> &sample: curSamples) {
-            //两种参数各跑一次，选择一个最好的参数
-            int totalValue = 0;
-            for (Business bus: buses) {
-                totalValue += bus.value;
-            }
-            int bestRemainValue = -1;
-            int bestMaxLength = -1;
-            for (int i = 0; i < 2; i++) {
-                vector<vector<Point>> curBusesResult = busesOriginResult;
-                int remainValue = totalValue;
-                int curMaxLength = i == 0 ? int(sample.size()) : SCENE_MAX_FAIL_EDGE_COUNT;
-                for (int j = 0; j < sample.size(); j++) {
-                    int failEdgeId = sample[j];
-                    unordered_set<int> beforeIds = getAllUnDieBusinessId(failEdgeId);
-                    dispatch(curBusesResult, failEdgeId, curMaxLength,
-                             j + 1, false, true);
-                    for (int beforeId: beforeIds) {
-                        if (buses[beforeId].die) {
-                            remainValue -= buses[beforeId].value;
-                        }
-                    }
-                }
-                if (remainValue > bestRemainValue) {
-                    bestRemainValue = remainValue;
-                    bestMaxLength = curMaxLength;
-                }
-                reset();
-            }
-            bestMaxLengths.push_back(bestMaxLength);
-        }
+
 
         printMeCreateSamples(curSamples);
 // 规划段 本地测试
@@ -1326,21 +1295,16 @@ struct Strategy {
             double myScore = 0, baseScore = 0;
             for (int i = 0; i < 2; i++) {
                 curScore = 0;
-                for (int j = 0; j < curSamples.size(); j++) {
+                for (auto & curSample : curSamples) {
                     vector<vector<Point>> curBusesResult = busesOriginResult;
-                    for (int k = 0; k < curSamples[j].size(); k++) {
-                        int failEdgeId = curSamples[j][k];
+                    for (int k = 0; k < curSample.size(); k++) {
+                        int failEdgeId = curSample[k];
                         int curLength = k + 1;
                         if (i == 0) {
-                            if (bestMaxLengths.empty()) {
-                                dispatch(curBusesResult, failEdgeId, int(curSamples[j].size()),
-                                         curLength, false, false);
-                            } else {
-                                dispatch(curBusesResult, failEdgeId, bestMaxLengths[j],
-                                         curLength, false, false);
-                            }
+                            dispatch(curBusesResult, failEdgeId, int(curSample.size()),
+                                     curLength, false, false);
                         } else {
-                            dispatch(curBusesResult, failEdgeId, bestMaxLengths[j],
+                            dispatch(curBusesResult, failEdgeId, SCENE_MAX_FAIL_EDGE_COUNT,
                                      curLength, true, false);
                         }
                     }
@@ -1388,18 +1352,13 @@ struct Strategy {
                     break;
                 }
                 curLength++;
-//                if (i < curSamples.size()) {
-//                    if (bestMaxLengths.empty()) {
-//                        dispatch(curBusesResult, failEdgeId, int(curSamples[i].size()),
-//                                 curLength, false, false);
-//                    } else {
-//                        dispatch(curBusesResult, failEdgeId, bestMaxLengths[i],
-//                                 curLength, false, false);
-//                    }
-//                } else {
-                dispatch(curBusesResult, failEdgeId, SCENE_MAX_FAIL_EDGE_COUNT,
-                         curLength, true, false);
-//                }
+                if (i < curSamples.size()) {
+                    dispatch(curBusesResult, failEdgeId, int(curSamples[i].size()),
+                             curLength, false, false);
+                } else {
+                    dispatch(curBusesResult, failEdgeId, SCENE_MAX_FAIL_EDGE_COUNT,
+                             curLength, true, false);
+                }
             }
             maxLength = curLength;
             int totalValue = 0;
