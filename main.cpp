@@ -960,14 +960,12 @@ struct Strategy {
 
 
         //计算业务占据的资源
-        int remainResource2 = totalResource;
         for (int i = 1; i < buses.size(); i++) {
             Business &bus = buses[i];
             bus.occupyResource = calculatesResource(busesOriginResult[bus.id]);
             remainAliveBusValue += bus.value;
             totalBusValue += bus.value;
-            remainResource2 -= bus.occupyResource;
-
+            remainResource -= bus.occupyResource;
         }
         remainAliveBusCount = int(buses.size());
         remainEdgesSize = int(edges.size()) - 1;
