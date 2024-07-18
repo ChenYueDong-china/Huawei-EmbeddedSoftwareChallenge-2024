@@ -17,9 +17,9 @@
 
 using namespace std;
 
-const bool LOCAL_TEST_CREATE = false;
-const int ME_CREATE_SAMPLE_COUNT = 0;//我需要创建50个样例
-const int ME_CREATE_SAMPLE_CANDIDATE_COUNT = 3;//生成一个样例的候选序列个数
+const bool LOCAL_TEST_CREATE = true;
+const int ME_CREATE_SAMPLE_COUNT = 1;//我需要创建50个样例
+const int ME_CREATE_SAMPLE_CANDIDATE_COUNT = 1;//生成一个样例的候选序列个数
 const int SCENE_MAX_FAIL_EDGE_COUNT = 50;//场景最大断边数
 const int CREATE_SHUFFLE_CANDIDATE_COUNT = 20;//大于0号策略时，每一次随机从20个中选一个
 const int CREATE_SHUFFLE_MAX_TRY_COUNT = 5;//不满足相似度约束时，最多尝试几次？
@@ -315,69 +315,55 @@ struct Strategy {
                  int minDistance[MAX_N + 1][MAX_N + 1], int maxDeep) {
             struct Common {
                 int timestamp;
-                int dist;
-                int parentChannelVertex;
                 int parentEdgeId;
             };
-            static Common common[CHANNEL_COUNT + 1][MAX_N + 1];
+            static Common common[MAX_N + 1];
             static int timestampId = 1;//距离
-            timestampId++;
-            //按照宽度排序，基本一致
+            int endChannel = -1;
             queue<int> q;
             for (int i = 1; i <= CHANNEL_COUNT; ++i) {
-                common[i][start].dist = 0;
-                common[i][start].timestamp = timestampId;
-                common[i][start].parentChannelVertex = (i << 16) + 0;//起始点为0顶点
-                q.push((i << 16) + start);
-            }
-            int endChannel = -1;
-            int deep = 0;
-            while (!q.empty()) {
-                int size = int(q.size());
-                deep++;
-                for (int i = 0; i < size; i++) {
-                    int poll = q.front();
-                    q.pop();
-                    int lastChannel = poll >> 16;
-                    int lastVertex = poll & 0xFFFF;
-                    if (lastVertex == end) {
-                        endChannel = lastChannel;
-                        break;
+                //按照宽度排序，基本一致
+                timestampId++;
+                common[start].timestamp = timestampId;
+                q.push(start);
+                while (!q.empty()) {
+                    int size = int(q.size());
+                    for (int j = 0; j < size; j++) {
+                        int poll = q.front();
+                        q.pop();
+                        int lastVertex = poll;
+                        if (lastVertex == end) {
+                            endChannel = i;
+                            break;
+                        }
+                        for (const NearEdge &nearEdge: searchGraph[lastVertex]) {
+                            const int next = nearEdge.to;
+                            const Edge &edge = edges[nearEdge.id];
+                            if (edge.die) {
+                                continue;
+                            }
+                            //没法变通道
+                            if (!edge.widthChannelTable[width][i]) {
+                                continue;//不空闲直接结束
+                            }
+                            if (common[next].timestamp == timestampId) {
+                                //访问过了，且距离没变得更近
+                                continue;
+                            }
+                            common[next].timestamp = timestampId;
+                            common[next].parentEdgeId = nearEdge.id;
+                            q.push(next);
+                        }
                     }
-                    for (NearEdge nearEdge: searchGraph[lastVertex]) {
-                        const int next = nearEdge.to;
-                        if ((common[lastChannel][lastVertex].parentChannelVertex & 0xFFFF) == next) {
-                            //防止重边
-                            continue;
-                        }
-                        const Edge &edge = edges[nearEdge.id];
-                        if (edge.die) {
-                            continue;
-                        }
-                        //没法变通道
-                        if (!edge.widthChannelTable[width][lastChannel]) {
-                            continue;//不空闲直接结束
-                        }
-                        const int startChannel = lastChannel;
-                        int nextDistance = deep;//不用变通道
-                        if (common[startChannel][next].timestamp == timestampId &&
-                            common[startChannel][next].dist <= nextDistance) {
-                            //访问过了，且距离没变得更近
-                            continue;
-                        }
-                        common[startChannel][next].timestamp = timestampId;
-                        common[startChannel][next].dist = nextDistance;
-                        common[startChannel][next].parentChannelVertex = (lastChannel << 16) + lastVertex;
-                        common[startChannel][next].parentEdgeId = nearEdge.id;
-                        q.push((startChannel << 16) + next);
-
+                    if (endChannel != -1) {
+                        break;
                     }
                 }
                 if (endChannel != -1) {
                     break;
                 }
-
             }
+
             if (endChannel == -1) {
                 return {};
             }
@@ -385,11 +371,9 @@ struct Strategy {
             int cur = end;
             int curStartChannel = endChannel;
             while (cur != start) {
-                int edgeId = common[curStartChannel][cur].parentEdgeId;
+                int edgeId = common[cur].parentEdgeId;
                 path.push_back({edgeId, curStartChannel, curStartChannel + width - 1});
-                int startChannel = common[curStartChannel][cur].parentChannelVertex >> 16;
-                cur = common[curStartChannel][cur].parentChannelVertex & 0xFFFF;
-                curStartChannel = startChannel;
+                cur = edges[edgeId].from == cur ? edges[edgeId].to : edges[edgeId].from;
             }
             reverse(path.begin(), path.end());
 
@@ -571,7 +555,7 @@ struct Strategy {
         int l1 = runtime();
         int originResource = calculatesResource(originPath);
         undoBusiness(business, originPath, {});
-        double remainBussValues = 1.0 * remainAliveBusValue * max(maxLength
+        double remainBussValues = 1.0 * remainAliveBusValue * max(min(maxLength, int(edges.size()) - 1)
                                                                   - curLength + 1, 1) / (remainEdgesSize + 1);
         //按照价值分资源
         int extraResource = (int) round(0.5 * business.value * remainResource / remainBussValues);
@@ -593,7 +577,7 @@ struct Strategy {
         int width = business.needChannelLength;
         int l1 = runtime();
         vector<Point> path = SearchUtils::baseFind(from, to, width,
-                                                   searchGraph, edges, vertices, minDistance,
+                                                   baseSearchGraph, edges, vertices, minDistance,
                                                    0);
         int r1 = runtime();
         searchTime += r1 - l1;
@@ -774,9 +758,9 @@ struct Strategy {
                 affectBusinesses.push_back(busId);
             }
         }
-        sort(affectBusinesses.begin(), affectBusinesses.end(), [&](int aId, int bId) {
+        stable_sort(affectBusinesses.begin(), affectBusinesses.end(), [&](int aId, int bId) {
             if (base) {
-                return buses[aId].needChannelLength > buses[bId].needChannelLength;
+                return buses[aId].value > buses[bId].value;
             } else {
                 return buses[aId].occupyResource > buses[bId].occupyResource;
             }
@@ -920,6 +904,10 @@ struct Strategy {
         for (int i = 1; i <= N; ++i) {
             searchGraph[i] = graph[i];
             baseSearchGraph[i] = graph[i];
+//            stable_sort(baseSearchGraph[i].begin(), baseSearchGraph[i].end(),
+//                        [](const NearEdge &o1,const  NearEdge &o2) {
+//                return o1.to > o2.to;
+//            });
         }
         for (int start = 1; start <= N; ++start) {
             for (int i = 1; i <= N; ++i) {
@@ -1013,6 +1001,10 @@ struct Strategy {
         int saveScores[edges.size()];
         bool beSelect[edges.size()];
         bool beSelectBus[buses.size()];
+        memset(saveScores, 0, sizeof saveScores);
+        memset(beSelect, false, sizeof beSelect);
+        memset(beSelectBus, false, sizeof beSelectBus);
+
         vector<vector<int>> samples;
         for (int i = 1; i < edges.size(); i++) {
             Edge edge = edges[i];
@@ -1187,8 +1179,8 @@ struct Strategy {
 
         int curLength = 0;
         int totalValue = 0;
-        for (Business bus: buses) {
-            totalValue += bus.value;
+        for (int i = 1; i < buses.size(); ++i) {
+            totalValue += buses[i].value;
         }
         for (int i = 0; i < 2; i++) {
             vector<vector<Point>> curBusesResult = busesOriginResult;
@@ -1252,81 +1244,81 @@ struct Strategy {
         vector<vector<int>> curSamples;
 
         //1.选定最好生成策略
-//        int bestType = 0;
-//        bool bestSubOnlyOne = false;
-//        maxScore = -100000;
-//        vector<int> bestSample;
-//        for (int i = 0; i < 7; i++) {
-//            for (int j = 0; j < 2; j++) {
-//                bool subOnlyOne = i == 0;
-//                vector<vector<int>> candidateSamples = myGenerate(curSamples, i, subOnlyOne, 1);
-//
-//                for (vector<int> &candidateSample: candidateSamples) {
-//                    vector<int> bestLengthAndScore = getBestLengthAndScore(curSamples, candidateSample);
-//                    if (bestLengthAndScore[1] > maxScore) {
-//                        maxScore = bestLengthAndScore[1];
-//                        bestSubOnlyOne = subOnlyOne;
-//                        bestType = i;
-//                        bestSample = candidateSample;
-//                    }
-//                    bestSample = candidateSample;
-//                }
-//            }
-//        }
-//
-//        curSamples.push_back(bestSample);
-//
-//        // 2.根据生成策略生成剩余的数据
-//        while (curSamples.size() < ME_CREATE_SAMPLE_COUNT) {
-//            vector<vector<int>> candidateSamples = myGenerate(curSamples, bestType, bestSubOnlyOne,
-//                                                              ME_CREATE_SAMPLE_CANDIDATE_COUNT);
-//            if (candidateSamples.size() < ME_CREATE_SAMPLE_CANDIDATE_COUNT) {
-//                break;
-//            }
-//            maxScore = -100000;
-//            bestSample.clear();
-//            for (vector<int> &candidateSample: candidateSamples) {
-//                vector<int> bestLengthAndScore = getBestLengthAndScore(curSamples, candidateSample);
-//                if (bestLengthAndScore[1] > maxScore) {
-//                    maxScore = bestLengthAndScore[1];
-//                    bestSample = candidateSample;
-//                }
-//            }
-//            curSamples.push_back(bestSample);
-//            //System.err.println("maxScore:" + maxScore + ",length:" + bestLength);
-//        }
+        int bestType = 0;
+        bool bestSubOnlyOne = false;
+        maxScore = -100000;
+        vector<int> bestSample;
+        for (int i = 0; i < 7; i++) {
+            for (int j = 0; j < 2; j++) {
+                bool subOnlyOne = i == 0;
+                vector<vector<int>> candidateSamples = myGenerate(curSamples, i, subOnlyOne, 1);
+
+                for (vector<int> &candidateSample: candidateSamples) {
+                    vector<int> bestLengthAndScore = getBestLengthAndScore(curSamples, candidateSample);
+                    if (bestLengthAndScore[1] > maxScore) {
+                        maxScore = bestLengthAndScore[1];
+                        bestSubOnlyOne = subOnlyOne;
+                        bestType = i;
+                        bestSample = {candidateSample.begin(),candidateSample.begin()+bestLengthAndScore[0]};
+                    }
+                    bestSample = candidateSample;
+                }
+            }
+        }
+
+        curSamples.push_back(bestSample);
+
+        // 2.根据生成策略生成剩余的数据
+        while (curSamples.size() < ME_CREATE_SAMPLE_COUNT) {
+            vector<vector<int>> candidateSamples = myGenerate(curSamples, bestType, bestSubOnlyOne,
+                                                              ME_CREATE_SAMPLE_CANDIDATE_COUNT);
+            if (candidateSamples.size() < ME_CREATE_SAMPLE_CANDIDATE_COUNT) {
+                break;
+            }
+            maxScore = -100000;
+            bestSample.clear();
+            for (vector<int> &candidateSample: candidateSamples) {
+                vector<int> bestLengthAndScore = getBestLengthAndScore(curSamples, candidateSample);
+                if (bestLengthAndScore[1] > maxScore) {
+                    maxScore = bestLengthAndScore[1];
+                    bestSample = {candidateSample.begin(),candidateSample.begin()+bestLengthAndScore[0]};
+                }
+            }
+            curSamples.push_back(bestSample);
+            //System.err.println("maxScore:" + maxScore + ",length:" + bestLength);
+        }
         vector<int> bestMaxLengths;
-//        for (vector<int> &sample: curSamples) {
-//            //两种参数各跑一次，选择一个最好的参数
-//            int totalValue = 0;
-//            for (Business bus: buses) {
-//                totalValue += bus.value;
-//            }
-//            int bestRemainValue = -1;
-//            int bestMaxLength = -1;
-//            for (int i = 0; i < 2; i++) {
-//                vector<vector<Point>> curBusesResult = busesOriginResult;
-//                int remainValue = totalValue;
-//                int curMaxLength = i == 0 ? int(sample.size()) : SCENE_MAX_FAIL_EDGE_COUNT;
-//                for (int j = 0; j < sample.size(); j++) {
-//                    int failEdgeId = sample[j];
-//                    unordered_set<int> beforeIds = getAllUnDieBusinessId(failEdgeId);
-//                    dispatch(curBusesResult, failEdgeId, curMaxLength,
-//                             j + 1, false, true);
-//                    for (int beforeId: beforeIds) {
-//                        if (buses[beforeId].die) {
-//                            remainValue -= buses[beforeId].value;
-//                        }
-//                    }
-//                }
-//                if (remainValue > bestRemainValue) {
-//                    bestRemainValue = remainValue;
-//                    bestMaxLength = curMaxLength;
-//                }
-//                reset();
-//            }
-//            bestMaxLengths.push_back(bestMaxLength);
-//        }
+        for (vector<int> &sample: curSamples) {
+            //两种参数各跑一次，选择一个最好的参数
+            int totalValue = 0;
+            for (Business bus: buses) {
+                totalValue += bus.value;
+            }
+            int bestRemainValue = -1;
+            int bestMaxLength = -1;
+            for (int i = 0; i < 2; i++) {
+                vector<vector<Point>> curBusesResult = busesOriginResult;
+                int remainValue = totalValue;
+                int curMaxLength = i == 0 ? int(sample.size()) : SCENE_MAX_FAIL_EDGE_COUNT;
+                for (int j = 0; j < sample.size(); j++) {
+                    int failEdgeId = sample[j];
+                    unordered_set<int> beforeIds = getAllUnDieBusinessId(failEdgeId);
+                    dispatch(curBusesResult, failEdgeId, curMaxLength,
+                             j + 1, false, true);
+                    for (int beforeId: beforeIds) {
+                        if (buses[beforeId].die) {
+                            remainValue -= buses[beforeId].value;
+                        }
+                    }
+                }
+                if (remainValue > bestRemainValue) {
+                    bestRemainValue = remainValue;
+                    bestMaxLength = curMaxLength;
+                }
+                reset();
+            }
+            bestMaxLengths.push_back(bestMaxLength);
+        }
 
         printMeCreateSamples(curSamples);
 // 规划段 本地测试
@@ -1396,18 +1388,18 @@ struct Strategy {
                     break;
                 }
                 curLength++;
-                if (i < curSamples.size()) {
-                    if (bestMaxLengths.empty()) {
-                        dispatch(curBusesResult, failEdgeId, int(curSamples[i].size()),
-                                 curLength, false, false);
-                    } else {
-                        dispatch(curBusesResult, failEdgeId, bestMaxLengths[i],
-                                 curLength, false, false);
-                    }
-                } else {
-                    dispatch(curBusesResult, failEdgeId, SCENE_MAX_FAIL_EDGE_COUNT,
-                             curLength, false, false);
-                }
+//                if (i < curSamples.size()) {
+//                    if (bestMaxLengths.empty()) {
+//                        dispatch(curBusesResult, failEdgeId, int(curSamples[i].size()),
+//                                 curLength, false, false);
+//                    } else {
+//                        dispatch(curBusesResult, failEdgeId, bestMaxLengths[i],
+//                                 curLength, false, false);
+//                    }
+//                } else {
+                dispatch(curBusesResult, failEdgeId, SCENE_MAX_FAIL_EDGE_COUNT,
+                         curLength, true, false);
+//                }
             }
             maxLength = curLength;
             int totalValue = 0;
