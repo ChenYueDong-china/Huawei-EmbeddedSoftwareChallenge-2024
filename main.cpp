@@ -965,7 +965,6 @@ struct Strategy {
             bus.occupyResource = calculatesResource(busesOriginResult[bus.id]);
             remainAliveBusValue += bus.value;
             totalBusValue += bus.value;
-            remainResource -= bus.occupyResource;
         }
         remainAliveBusCount = int(buses.size());
         remainEdgesSize = int(edges.size()) - 1;
