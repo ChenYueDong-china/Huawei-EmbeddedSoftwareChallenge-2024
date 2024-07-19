@@ -33,10 +33,6 @@ const int SMALL_CHANNEL_WEIGHT = 1;//留1s阈值
 int CHANGE_CHANNEL_WEIGHT = 1000;//留1s阈值
 const int EDGE_LENGTH_WEIGHT = 1000;//留1s阈值
 
-//业务是否不救参数
-const int REMAIN_COUNT_RECOVERY = 10;//剩余几个一定救，只有t大于1有用，猜测线上每一次t的断边个数都一样
-const double SHOULD_DIE_FACTOR = 5.0;//不救哪些业务因子
-const double SHOULD_DIE_MIN_RECOVER_RATE = 0.8;//救活率低于这个才不救
 
 //常量
 static int MAX_E_FAIL_COUNT = 6000;
