@@ -18,10 +18,10 @@
 using namespace std;
 
 const bool LOCAL_TEST_CREATE = true;
-const int ME_CREATE_SAMPLE_COUNT = 1;//我需要创建50个样例
+const int ME_CREATE_SAMPLE_COUNT = 50;//我需要创建50个样例
 const int ME_CREATE_SAMPLE_CANDIDATE_COUNT = 1;//生成一个样例的候选序列个数
 const int SCENE_MAX_FAIL_EDGE_COUNT = 50;//场景最大断边数
-const int CREATE_SHUFFLE_CANDIDATE_COUNT = 20;//大于0号策略时，每一次随机从20个中选一个
+const int CREATE_SHUFFLE_CANDIDATE_COUNT = 30;//大于0号策略时，每一次随机从20个中选一个
 const int CREATE_SHUFFLE_MAX_TRY_COUNT = 5;//不满足相似度约束时，最多尝试几次？
 const double SIMILARITY_THRESHOLD = 0.6;//相似度约束
 
@@ -40,7 +40,9 @@ const double SHOULD_DIE_MIN_RECOVER_RATE = 0.8;//救活率低于这个才不救
 
 //常量
 static int MAX_E_FAIL_COUNT = 6000;
+const int MAX_CREATE_SAMPLES_TIME = 20 * 1000;
 const int SEARCH_TIME = 90 * 1000;
+
 const int MAX_M = 1000;
 const int MAX_N = 200;
 const int CHANNEL_COUNT = 40;
@@ -135,19 +137,20 @@ struct Strategy {
     int curHandleCount = 0;
     double maxScore{};
     double curScore{};
-    int recoveryCount = 0;
-    int maxDieCount = 0;
     int totalResource = 0;//初始状态剩余的资源
     int totalBusValue = 0;//初始状态剩余的资源
     int remainResource = 0;//初始状态剩余的资源
     int remainAliveBusCount = 0;//初始状态剩余的资源
     int remainAliveBusValue = 0;//初始状态剩余的资源
     int remainEdgesSize = 0;//初始状态剩余的资源
+    int createScores[MAX_M + 1];//基础分
+    vector<vector<int>> baseRepValue[MAX_M + 1];//断掉应该增加的分
+    vector<vector<int>> baseOriginValue[MAX_M + 1];//断掉应该增加的分
 
     struct SearchUtils {
         inline static vector<Point> aStar(int start, int end, int width, const vector<NearEdge> searchGraph[MAX_N + 1],
                                           const vector<Edge> &edges, const vector<Vertex> &vertices,
-                                          int minDistance[MAX_N + 1][MAX_N + 1], int maxDeep) {
+                                          int minDistance[MAX_N + 1][MAX_N + 1], int maxDeep, bool test) {
             struct Common {
                 int timestamp;
                 int dist;
@@ -208,7 +211,7 @@ struct Strategy {
                         }
                         const int startChannel = lastChannel;
                         int nextDistance = lastDeep + width * EDGE_LENGTH_WEIGHT;//不用变通道
-                        if (edge.channelData[startChannel][0] != width) {
+                        if (!test && edge.channelData[startChannel][0] != width) {
                             assert (startChannel - edge.channelData[startChannel][1] >= 0);
                             assert (edge.channelData[startChannel][2] - (startChannel + width) + 1 >= 0);
                             int lowWidth = startChannel - edge.channelData[startChannel][1];
@@ -234,7 +237,7 @@ struct Strategy {
                             const int startChannel = freeChannelTable[i];
                             //用来穷举
                             int nextDistance = lastDeep + width * EDGE_LENGTH_WEIGHT;
-                            if (edge.channelData[startChannel][0] != width) {
+                            if (!test && edge.channelData[startChannel][0] != width) {
                                 assert (startChannel - edge.channelData[startChannel][1] >= 0);
                                 assert (edge.channelData[startChannel][2] - (startChannel + width) + 1 >= 0);
                                 int lowWidth = startChannel - edge.channelData[startChannel][1];
@@ -299,7 +302,7 @@ struct Strategy {
                         tmpFrom = edge1.from == tmpFrom ? edge1.to : edge1.from;
                     }
                     conflictPoints[lockE][lockV] = true;
-                    path = aStar(start, end, width, searchGraph, edges, vertices, minDistance, maxDeep);
+                    path = aStar(start, end, width, searchGraph, edges, vertices, minDistance, maxDeep, test);
                     conflictPoints[lockE][lockV] = false;
                     return path;
                 }
@@ -548,7 +551,8 @@ struct Strategy {
     }
 
     //aStar寻路
-    inline vector<Point> aStarFindPath(Business &business, vector<Point> &originPath, int maxLength, int curLength) {
+    inline vector<Point>
+    aStarFindPath(Business &business, vector<Point> &originPath, int maxLength, int curLength, bool test) {
         int from = business.from;
         int to = business.to;
         int width = business.needChannelLength;
@@ -564,14 +568,14 @@ struct Strategy {
         }
         vector<Point> path = SearchUtils::aStar(from, to, width,
                                                 searchGraph, edges, vertices, minDistance,
-                                                originResource + extraResource);
+                                                originResource + extraResource, test);
         redoBusiness(business, originPath, {});
         int r1 = runtime();
         searchTime += r1 - l1;
         return path;
     }
 
-    inline vector<Point> baseFindPath(Business &business, vector<Point> &originPath, int maxLength, int curLength) {
+    inline vector<Point> baseLineFindPath(Business &business, vector<Point> &originPath, int maxLength, int curLength) {
         int from = business.from;
         int to = business.to;
         int width = business.needChannelLength;
@@ -695,15 +699,15 @@ struct Strategy {
 //简单获得一个基础分
     inline unordered_map<int, vector<Point>>
     getBaseLineResult(const vector<int> &affectBusinesses, vector<vector<Point>> &curBusesResult,
-                      int maxLength, int curLength, bool base) {
+                      int maxLength, int curLength, bool base, bool test) {
         unordered_map<int, vector<Point>> satisfyBusesResult;
         for (int id: affectBusinesses) {
             Business &business = buses[id];
             vector<Point> path;
             if (base) {
-                path = baseFindPath(business, curBusesResult[business.id], maxLength, curLength);
+                path = baseLineFindPath(business, curBusesResult[business.id], maxLength, curLength);
             } else {
-                path = aStarFindPath(business, curBusesResult[business.id], maxLength, curLength);
+                path = aStarFindPath(business, curBusesResult[business.id], maxLength, curLength, test);
             }
             if (!path.empty()) {
                 //变通道次数得减回去
@@ -758,7 +762,7 @@ struct Strategy {
                 affectBusinesses.push_back(busId);
             }
         }
-        stable_sort(affectBusinesses.begin(), affectBusinesses.end(), [&](int aId, int bId) {
+        sort(affectBusinesses.begin(), affectBusinesses.end(), [&](int aId, int bId) {
             if (base) {
                 return buses[aId].value > buses[bId].value;
             } else {
@@ -802,7 +806,7 @@ struct Strategy {
 
             unordered_map<int, vector<Point>> satisfyBusesResult = getBaseLineResult(affectBusinesses,
                                                                                      curBusesResult,
-                                                                                     maxLength, curLength, base
+                                                                                     maxLength, curLength, base, test
             );
 
 
@@ -904,10 +908,6 @@ struct Strategy {
         for (int i = 1; i <= N; ++i) {
             searchGraph[i] = graph[i];
             baseSearchGraph[i] = graph[i];
-//            stable_sort(baseSearchGraph[i].begin(), baseSearchGraph[i].end(),
-//                        [](const NearEdge &o1,const  NearEdge &o2) {
-//                return o1.to > o2.to;
-//            });
         }
         for (int start = 1; start <= N; ++start) {
             for (int i = 1; i <= N; ++i) {
@@ -944,7 +944,7 @@ struct Strategy {
         }
         CHANGE_CHANNEL_WEIGHT = EDGE_LENGTH_WEIGHT * (int(edges.size()) - 1) * 5 / totalChangeCount;
         for (int i = 1; i < edges.size(); i++) {
-            Edge edge = edges[i];
+            const Edge &edge = edges[i];
             for (int j = 1; j <= CHANNEL_COUNT; j++) {
                 if (edge.channel[j] == -1) {
                     remainResource += EDGE_LENGTH_WEIGHT;
@@ -968,6 +968,61 @@ struct Strategy {
         }
         remainAliveBusCount = int(buses.size());
         remainEdgesSize = int(edges.size()) - 1;
+
+        //剩余的通道数
+        int remainChannels = 0;
+        for (int i = 1; i < edges.size(); i++) {
+            for (int j = 1; j <= CHANNEL_COUNT; j++) {
+                if (edges[i].channel[j] == -1) {
+                    remainChannels++;
+                }
+            }
+        }
+        double failTotalValue =
+                1.0 * totalBusValue * min(SCENE_MAX_FAIL_EDGE_COUNT, int(edges.size()) - 1) / (int(edges.size()) - 1);
+        double avgEveryChannelValue = failTotalValue / remainChannels;
+        //每个通道变现的价值
+
+        for (int i = 1; i < edges.size(); i++) {
+            unordered_set<int> ids = getAllUnDieBusinessId(i);
+            edges[i].die = true;
+            double baseValue = 0;
+            double meValue = 0;
+            for (int id: ids) {
+                vector<Point> originPath = busesOriginResult[id];
+                Business &business = buses[id];
+                vector<Point> baseFindPath = baseLineFindPath(business, originPath, SCENE_MAX_FAIL_EDGE_COUNT, 0);
+                vector<Point> meFindPath = aStarFindPath(business, originPath, SCENE_MAX_FAIL_EDGE_COUNT, 0, true);
+
+                if (!baseFindPath.empty()) {
+                    baseValue += buses[id].value;
+                    baseValue -= int(baseFindPath.size() - originPath.size()) * business.needChannelLength *
+                                 avgEveryChannelValue;
+                    for (Point &point: baseFindPath) {
+                        vector<int> tmp;
+                        tmp.push_back(point.edgeId);
+                        tmp.push_back(buses[id].value);
+                        baseRepValue[i].push_back(tmp);
+                    }
+                } else {
+                    for (Point &point: originPath) {
+                        vector<int> tmp;
+                        tmp.push_back(point.edgeId);
+                        tmp.push_back(buses[id].value);
+                        baseOriginValue[i].push_back(tmp);
+                    }
+                }
+                if (!meFindPath.empty()) {
+                    meValue += buses[id].value;
+                    meValue -=
+                            int(meFindPath.size() - originPath.size()) * business.needChannelLength *
+                            avgEveryChannelValue;
+                }
+            }
+            createScores[i] = (int) round(meValue - baseValue);
+            edges[i].die = false;
+        }
+
 
     }
 
@@ -1235,55 +1290,210 @@ struct Strategy {
         fflush(stdout);
     }
 
+    vector<vector<int>>
+    myGenerate2(vector<vector<int>> &beforeSample, int initLength, int candidateSize, const int returnCount) {
+        bool beSelect[edges.size()];
+        vector<vector<int>> samples;
+        int scores[edges.size()];
+        initLength = min(int(edges.size()) - 1, initLength);
+        candidateSize = min(int(edges.size()) - 1, candidateSize);
+        struct EdgeIdScore {
+            int id;
+            int score;
+
+            bool operator<(const EdgeIdScore &o1) const {
+                return score > o1.score;
+            }
+        };
+
+        int tryCount = 0;
+        while (samples.size() < returnCount) {
+            memset(beSelect, false, sizeof beSelect);
+            memcpy(scores, createScores, sizeof scores);
+            vector<int> sample;
+            for (int i = 0; i < initLength; i++) {
+                priority_queue<EdgeIdScore> minScoreQ;
+                for (int j = 1; j < edges.size(); j++) {
+                    if (beSelect[j]) {
+                        continue;
+                    }
+                    if (minScoreQ.size() < candidateSize) {
+                        minScoreQ.push({j, scores[j]});
+                        continue;
+                    }
+
+                    if (scores[j] > minScoreQ.top().score) {
+                        minScoreQ.pop();
+                        minScoreQ.push({j, scores[j]});
+                    }
+                }
+                //随机选择一个边断掉
+                int index = int(rad() % candidateSize);
+                int id = -1;
+                for (int j = 0; j <= index; j++) {
+                    if (minScoreQ.empty()) {
+                        break;
+                    }
+                    id = minScoreQ.top().id;
+                    minScoreQ.pop();
+                }
+                beSelect[id] = true;
+
+                //上面路径上的分数减过去
+                vector<int> busIds;
+                Edge &edge = edges[id];
+                for (int j = 1; j <= CHANNEL_COUNT; j++) {
+                    if (edge.channel[j] != -1 && edge.channel[j] != edge.channel[j - 1]) {
+                        busIds.push_back(edge.channel[j]);
+                    }
+                }
+                for (vector<int> &pa: baseRepValue[id]) {
+                    //base寻的到的+分，让他死
+                    int edId = pa[0];
+                    int addScore = pa[1];
+                    if (beSelect[edId]) {
+                        continue;
+                    }
+                    scores[edId] += addScore;
+                }
+                for (vector<int> &pa: baseOriginValue[id]) {
+                    //base寻不到的减分，让他活
+                    int edId = pa[0];
+                    int subScore = pa[1];
+                    if (beSelect[edId]) {
+                        continue;
+                    }
+                    scores[edId] -= subScore;
+                }
+
+                for (int busId: busIds) {
+                    const vector<Point> &path = busesOriginResult[busId];
+                    for (const Point &point: path) {
+                        if (beSelect[point.edgeId]) {
+                            continue;
+                        }
+                        scores[point.edgeId] -= buses[busId].value;
+                    }
+                }
+                sample.push_back(id);
+            }
+            if (checkSatisfiedSamplesSimilarity(beforeSample, sample)) {
+                samples.push_back(sample);
+            } else {
+                tryCount++;
+                if (tryCount > CREATE_SHUFFLE_MAX_TRY_COUNT) {
+                    if (initLength == 1) {
+                        break;
+                    }
+                    tryCount = 0;
+                    initLength = max(1, (int) (initLength * 0.8));
+                }
+            }
+        }
+        return samples;
+    }
+
 //主循环
     void mainLoop() {
         // 生成段
         vector<vector<int>> curSamples;
+        vector<int> curSamplesValues;
 
         //1.选定最好生成策略
         int bestType = 0;
         bool bestSubOnlyOne = false;
         maxScore = -100000;
-        vector<int> bestSample;
-        for (int i = 0; i < 7; i++) {
-            for (int j = 0; j < 2; j++) {
-                bool subOnlyOne = i == 0;
-                vector<vector<int>> candidateSamples = myGenerate(curSamples, i, subOnlyOne, 1);
-
-                for (vector<int> &candidateSample: candidateSamples) {
-                    vector<int> bestLengthAndScore = getBestLengthAndScore(curSamples, candidateSample);
-                    if (bestLengthAndScore[1] > maxScore) {
-                        maxScore = bestLengthAndScore[1];
-                        bestSubOnlyOne = subOnlyOne;
-                        bestType = i;
-                        bestSample = {candidateSample.begin(), candidateSample.begin() + bestLengthAndScore[0]};
-                    }
-                    bestSample = candidateSample;
-                }
-            }
-        }
-
-        curSamples.push_back(bestSample);
+//        for (int i = 0; i < 7; i++) {
+//            for (int j = 0; j < 2; j++) {
+//                bool subOnlyOne = i == 0;
+//                vector<vector<int>> candidateSamples = myGenerate(curSamples, i, subOnlyOne, 1);
+//
+//                for (vector<int> &candidateSample: candidateSamples) {
+//                    vector<int> bestLengthAndScore = getBestLengthAndScore(curSamples, candidateSample);
+//                    if (bestLengthAndScore[1] > maxScore) {
+//                        maxScore = bestLengthAndScore[1];
+//                        bestSubOnlyOne = subOnlyOne;
+//                        bestType = i;
+//                        bestSample = {candidateSample.begin(), candidateSample.begin() + bestLengthAndScore[0]};
+//                    }
+//                    bestSample = candidateSample;
+//                }
+//            }
+//        }
+//
+//        curSamples.push_back(bestSample);
 
         // 2.根据生成策略生成剩余的数据
-        while (curSamples.size() < ME_CREATE_SAMPLE_COUNT) {
-            vector<vector<int>> candidateSamples = myGenerate(curSamples, bestType, bestSubOnlyOne,
-                                                              ME_CREATE_SAMPLE_CANDIDATE_COUNT);
-            if (candidateSamples.size() < ME_CREATE_SAMPLE_CANDIDATE_COUNT) {
-                break;
-            }
-            maxScore = -100000;
-            bestSample.clear();
-            for (vector<int> &candidateSample: candidateSamples) {
-                vector<int> bestLengthAndScore = getBestLengthAndScore(curSamples, candidateSample);
-                if (bestLengthAndScore[1] > maxScore) {
-                    maxScore = bestLengthAndScore[1];
-                    bestSample = {candidateSample.begin(), candidateSample.begin() + bestLengthAndScore[0]};
+        int noBetterCount = 0;
+        int candidateCount = CREATE_SHUFFLE_CANDIDATE_COUNT;
+        while (true) {
+            if (curSamples.size() < ME_CREATE_SAMPLE_COUNT) {
+                vector<vector<int>> candidateSamples = myGenerate2(curSamples, SCENE_MAX_FAIL_EDGE_COUNT,
+                                                                   CREATE_SHUFFLE_CANDIDATE_COUNT,
+                                                                   ME_CREATE_SAMPLE_CANDIDATE_COUNT);
+                // ArrayList<ArrayList<Integer>> candidateSamples = myGenerate(curSamples, 4, false, ME_CREATE_SAMPLE_CANDIDATE_COUNT);
+                if (candidateSamples.size() < ME_CREATE_SAMPLE_CANDIDATE_COUNT) {
+                    break;
+                }
+
+                int bestScore = -100000;
+                vector<int> bestSample;
+                for (vector<int> &candidateSample: candidateSamples) {
+                    vector<int> bestLengthAndScore = getBestLengthAndScore(curSamples, candidateSample);
+                    if (bestLengthAndScore[1] > bestScore) {
+                        bestScore = bestLengthAndScore[1];
+                        bestSample = {candidateSample.begin(), candidateSample.begin() + bestLengthAndScore[0]};
+                    }
+                }
+                curSamples.push_back(bestSample);
+                curSamplesValues.push_back(bestScore);
+            } else {
+                int minIndex = 0;
+                int minValue = curSamplesValues[0];
+                int minSampleLength = int(curSamples[0].size());
+                int maxSampleLength = int(curSamples[0].size());
+                for (int i = 1; i < curSamples.size(); i++) {
+                    if (curSamplesValues[i] < minValue) {
+                        minIndex = i;
+                        minValue = curSamplesValues[i];
+                    }
+                    if (curSamples[i].size() < minSampleLength) {
+                        minSampleLength = int(curSamples[i].size());
+                    }
+
+                    if (int(curSamples[i].size()) > maxSampleLength) {
+                        maxSampleLength = int(curSamples[i].size());
+                    }
+                }
+                int curCreateLength = minSampleLength + int(rad() % (maxSampleLength - minSampleLength + 1));
+                vector<vector<int>> tmpSamples;
+                for (int i = 0; i < curSamples.size(); i++) {
+                    if (minIndex != i) {
+                        tmpSamples.push_back(curSamples[i]);
+                    }
+                }
+                vector<vector<int>> candidateSamples = myGenerate2(tmpSamples, curCreateLength,
+                                                                   candidateCount, 1);
+                vector<int> bestLengthAndScore = getBestLengthAndScore(curSamples, candidateSamples[0]);
+                if (bestLengthAndScore[1] > minValue) {
+                    curSamples[minIndex] = {candidateSamples[0].begin(),
+                                            candidateSamples[0].begin() + bestLengthAndScore[0]};
+                    curSamplesValues[minIndex] = bestLengthAndScore[1];
                 }
             }
-            curSamples.push_back(bestSample);
-            //System.err.println("maxScore:" + maxScore + ",length:" + bestLength);
+            long curTime = runtime();
+            if (curTime > MAX_CREATE_SAMPLES_TIME) {
+                break;
+            }
+
         }
+
+        int value = 0;
+        for (int curSamplesValue: curSamplesValues) {
+            value += curSamplesValue;
+        }
+
+        printError("maxValue:" + to_string(totalBusValue * curSamples.size()) + ",value:" + to_string(value));
 
 
         printMeCreateSamples(curSamples);
@@ -1292,7 +1502,7 @@ struct Strategy {
             double myScore = 0, baseScore = 0;
             for (int i = 0; i < 2; i++) {
                 curScore = 0;
-                for (auto & curSample : curSamples) {
+                for (auto &curSample: curSamples) {
                     vector<vector<Point>> curBusesResult = busesOriginResult;
                     for (int k = 0; k < curSample.size(); k++) {
                         int failEdgeId = curSample[k];
@@ -1354,7 +1564,7 @@ struct Strategy {
                              curLength, false, false);
                 } else {
                     dispatch(curBusesResult, failEdgeId, SCENE_MAX_FAIL_EDGE_COUNT,
-                             curLength, true, false);
+                             curLength, false, false);
                 }
             }
             maxLength = curLength;
