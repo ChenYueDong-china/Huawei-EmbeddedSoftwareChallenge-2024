@@ -146,7 +146,7 @@ struct Strategy {
     struct SearchUtils {
         inline static vector<Point> aStar(int start, int end, int width, const vector<NearEdge> searchGraph[MAX_N + 1],
                                           const vector<Edge> &edges, const vector<Vertex> &vertices,
-                                          int minDistance[MAX_N + 1][MAX_N + 1], int maxDeep, bool test) {
+                                          int minDistance[MAX_N + 1][MAX_N + 1], int maxDeep) {
             struct Common {
                 int timestamp;
                 int dist;
@@ -207,7 +207,7 @@ struct Strategy {
                         }
                         const int startChannel = lastChannel;
                         int nextDistance = lastDeep + width * EDGE_LENGTH_WEIGHT;//不用变通道
-                        if (!test && edge.channelData[startChannel][0] != width) {
+                        if (edge.channelData[startChannel][0] != width) {
                             assert (startChannel - edge.channelData[startChannel][1] >= 0);
                             assert (edge.channelData[startChannel][2] - (startChannel + width) + 1 >= 0);
                             int lowWidth = startChannel - edge.channelData[startChannel][1];
@@ -233,7 +233,7 @@ struct Strategy {
                             const int startChannel = freeChannelTable[i];
                             //用来穷举
                             int nextDistance = lastDeep + width * EDGE_LENGTH_WEIGHT;
-                            if (!test && edge.channelData[startChannel][0] != width) {
+                            if (edge.channelData[startChannel][0] != width) {
                                 assert (startChannel - edge.channelData[startChannel][1] >= 0);
                                 assert (edge.channelData[startChannel][2] - (startChannel + width) + 1 >= 0);
                                 int lowWidth = startChannel - edge.channelData[startChannel][1];
@@ -298,7 +298,7 @@ struct Strategy {
                         tmpFrom = edge1.from == tmpFrom ? edge1.to : edge1.from;
                     }
                     conflictPoints[lockE][lockV] = true;
-                    path = aStar(start, end, width, searchGraph, edges, vertices, minDistance, maxDeep, test);
+                    path = aStar(start, end, width, searchGraph, edges, vertices, minDistance, maxDeep);
                     conflictPoints[lockE][lockV] = false;
                     return path;
                 }
@@ -548,7 +548,7 @@ struct Strategy {
 
     //aStar寻路
     inline vector<Point>
-    aStarFindPath(Business &business, vector<Point> &originPath, int maxLength, int curLength, bool test) {
+    aStarFindPath(Business &business, const vector<Point> &originPath, int maxLength, int curLength) {
         int from = business.from;
         int to = business.to;
         int width = business.needChannelLength;
@@ -564,14 +564,14 @@ struct Strategy {
         }
         vector<Point> path = SearchUtils::aStar(from, to, width,
                                                 searchGraph, edges, vertices, minDistance,
-                                                originResource + extraResource, test);
+                                                originResource + extraResource);
         redoBusiness(business, originPath, {});
         int r1 = runtime();
         searchTime += r1 - l1;
         return path;
     }
 
-    inline vector<Point> baseLineFindPath(Business &business, vector<Point> &originPath, int maxLength, int curLength) {
+    inline vector<Point> baseLineFindPath(Business &business, const vector<Point> &originPath, int maxLength, int curLength) {
         int from = business.from;
         int to = business.to;
         int width = business.needChannelLength;
@@ -703,7 +703,7 @@ struct Strategy {
             if (base) {
                 path = baseLineFindPath(business, curBusesResult[business.id], maxLength, curLength);
             } else {
-                path = aStarFindPath(business, curBusesResult[business.id], maxLength, curLength, test);
+                path = aStarFindPath(business, curBusesResult[business.id], maxLength, curLength);
             }
             if (!path.empty()) {
                 //变通道次数得减回去
@@ -985,10 +985,10 @@ struct Strategy {
             double baseValue = 0;
             double meValue = 0;
             for (int id: ids) {
-                vector<Point> originPath = busesOriginResult[id];
+                const vector<Point> &originPath = busesOriginResult[id];
                 Business &business = buses[id];
                 vector<Point> baseFindPath = baseLineFindPath(business, originPath, SCENE_MAX_FAIL_EDGE_COUNT, 0);
-                vector<Point> meFindPath = aStarFindPath(business, originPath, SCENE_MAX_FAIL_EDGE_COUNT, 0, true);
+                vector<Point> meFindPath = aStarFindPath(business, originPath, SCENE_MAX_FAIL_EDGE_COUNT, 0);
 
                 if (!baseFindPath.empty()) {
                     baseValue += buses[id].value;
@@ -1001,7 +1001,7 @@ struct Strategy {
                         baseRepValue[i].push_back(tmp);
                     }
                 } else {
-                    for (Point &point: originPath) {
+                    for (const Point &point: originPath) {
                         vector<int> tmp;
                         tmp.push_back(point.edgeId);
                         tmp.push_back(buses[id].value);
