@@ -981,7 +981,7 @@ struct Strategy {
         //每个通道变现的价值
 
         for (int i = 1; i < edges.size(); i++) {
-            unordered_set<int> ids = getAllUnDieBusinessId(i);
+            vector<int> ids = getAllUnDieBusinessId(i);
             edges[i].die = true;
             double baseValue = 0;
             double meValue = 0;
@@ -1020,26 +1020,31 @@ struct Strategy {
             edges[i].die = false;
         }
 
-
     }
 
     static bool checkSatisfiedSamplesSimilarity(vector<vector<int>> &samples, vector<int> &curSample) {
-        for (vector<int> &sample1: samples) {
-            unordered_set<int> mergers;
-            for (const auto &item: sample1) {
-                mergers.insert(item);
+        static bool visit[MAX_M + 1];
+        for (const vector<int> &sample1: samples) {
+            int mergersCount = 0;
+            for (const int &item: sample1) {
+                visit[item] = true;
+                mergersCount++;
             }
-            unordered_set<int> sample1Set = mergers;
-            for (const auto &item: curSample) {
-                mergers.insert(item);
-            }
-            vector<int> intersection;
-            for (int num: curSample) {
-                if (sample1Set.count(num)) {
-                    intersection.push_back(num);
+            for (const int &item: curSample) {
+                if (!visit[item]) {
+                    mergersCount++;
                 }
             }
-            if (1.0 * int(intersection.size()) / int(mergers.size()) > SIMILARITY_THRESHOLD) {
+            int intersectionCount = 0;
+            for (int num: curSample) {
+                if (visit[num]) {
+                    intersectionCount++;
+                }
+            }
+            for (const int &item: sample1) {
+                visit[item] = false;
+            }
+            if (1.0 * intersectionCount / mergersCount > SIMILARITY_THRESHOLD) {
                 return false;
             }
         }
@@ -1209,17 +1214,18 @@ struct Strategy {
         return samples;
     }
 
-    unordered_set<int> getAllUnDieBusinessId(int failEdgeId) {
-        unordered_set<int> result;
+    vector<int> getAllUnDieBusinessId(int failEdgeId) {
+        vector<int> result;
         Edge &edge = edges[failEdgeId];
         for (int j = 1; j <= CHANNEL_COUNT; j++) {
             if (edge.channel[j] != -1 && edge.channel[j - 1] != edge.channel[j]
                 && !buses[edge.channel[j]].die) {
-                result.insert(edge.channel[j]);
+                result.push_back(edge.channel[j]);
             }
         }
         return result;
     }
+
 
     vector<int> getBestLengthAndScore(vector<vector<int>> &otherSamples, vector<int> &sample) {
         //最好的长度，以及分差;
@@ -1236,7 +1242,7 @@ struct Strategy {
             int remainValue = totalValue;
             for (int j = 0; j < sample.size(); j++) {
                 int failEdgeId = sample[j];
-                unordered_set<int> beforeIds = getAllUnDieBusinessId(failEdgeId);
+                vector<int> beforeIds = getAllUnDieBusinessId(failEdgeId);
                 dispatch(curBusesResult, failEdgeId, int(sample.size()), curLength, i != 0, true);
                 for (int beforeId: beforeIds) {
                     if (buses[beforeId].die) {
@@ -1424,12 +1430,16 @@ struct Strategy {
         int noBetterCount = 0;
         int iterateCount = 0;
         int candidateCount = CREATE_SHUFFLE_CANDIDATE_COUNT;
+        int l1 = runtime();
+        int time3 = 0;
         while (true) {
             iterateCount++;
             if (curSamples.size() < ME_CREATE_SAMPLE_COUNT) {
+
                 vector<vector<int>> candidateSamples = myGenerate2(curSamples, SCENE_MAX_FAIL_EDGE_COUNT,
                                                                    CREATE_SHUFFLE_CANDIDATE_COUNT,
                                                                    ME_CREATE_SAMPLE_CANDIDATE_COUNT);
+
                 // ArrayList<ArrayList<Integer>> candidateSamples = myGenerate(curSamples, 4, false, ME_CREATE_SAMPLE_CANDIDATE_COUNT);
                 if (candidateSamples.size() < ME_CREATE_SAMPLE_CANDIDATE_COUNT) {
                     break;
@@ -1438,7 +1448,10 @@ struct Strategy {
                 int bestScore = -100000;
                 vector<int> bestSample;
                 for (vector<int> &candidateSample: candidateSamples) {
+                    int l2 = runtime();
                     vector<int> bestLengthAndScore = getBestLengthAndScore(curSamples, candidateSample);
+                    int r2 = runtime();
+                    time3 += r2 - l2;
                     if (bestLengthAndScore[1] > bestScore) {
                         bestScore = bestLengthAndScore[1];
                         bestSample = {candidateSample.begin(), candidateSample.begin() + bestLengthAndScore[0]};
@@ -1471,9 +1484,13 @@ struct Strategy {
                         tmpSamples.push_back(curSamples[i]);
                     }
                 }
+
                 vector<vector<int>> candidateSamples = myGenerate2(tmpSamples, curCreateLength,
                                                                    candidateCount, 1);
+                int l2 = runtime();
                 vector<int> bestLengthAndScore = getBestLengthAndScore(tmpSamples, candidateSamples[0]);
+                int r2 = runtime();
+                time3 += r2 - l2;
                 if (bestLengthAndScore[1] > minValue) {
                     curSamples[minIndex] = {candidateSamples[0].begin(),
                                             candidateSamples[0].begin() + bestLengthAndScore[0]};
@@ -1486,15 +1503,17 @@ struct Strategy {
             }
 
         }
-
+        int l2 = runtime();
         int value = 0;
         for (int curSamplesValue: curSamplesValues) {
             value += curSamplesValue;
         }
 
         printError(
-                "iterateCount:" + to_string(iterateCount) + ",maxValue:" + to_string(totalBusValue * curSamples.size()) +
-                ",value:" + to_string(value));
+                "iterateCount:" + to_string(iterateCount) + ",maxValue:" +
+                to_string(totalBusValue * curSamples.size()) +
+                ",value:" + to_string(value) + ",initTime:" + to_string(l2 - l1) + ",time3:"
+                + to_string(time3) );
 
 
         printMeCreateSamples(curSamples);
