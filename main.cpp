@@ -34,15 +34,15 @@ const int EVERY_SCENE_MAX_FAIL_EDGE_COUNT = 50;//一个场景场景最大断边�
 
 //迭代参数
 const int SEARCH_RANDOM_SEED = 666;//搜索种子
-const int MIN_ITERATION_COUNT = 1;//最低穷举次数
-const bool IS_ONLINE = false;//是否使劲穷举
+const int MIN_ITERATION_COUNT = 1;//留1s阈值,他的样例的迭代次数，我们自己的不迭代，防止效果变差
+const bool IS_ONLINE = false;//使劲迭代人家的，留1s阈值
 const int SMALL_CHANNEL_WEIGHT = 1;//窄通道权重
 int CHANGE_CHANNEL_WEIGHT = 1000;//变通道权重
 const int EDGE_LENGTH_WEIGHT = 1000;//边的权重
 
 
 //搜索常量
-static int MAX_E_FAIL_COUNT = 5000;//最大断边数5k
+static int MAX_E_FAIL_COUNT = 2500;//最大断边数5k
 const int SEARCH_TIME = 90 * 1000;
 
 //其他常量
@@ -1534,7 +1534,7 @@ struct Strategy {
                         int curLength = k + 1;
                         if (i == 0) {
                             dispatch(curBusesResult, failEdgeId, int(curSample.size()),
-                                     curLength, false, false);
+                                     curLength, false, true);
                         } else {
                             dispatch(curBusesResult, failEdgeId, EVERY_SCENE_MAX_FAIL_EDGE_COUNT,
                                      curLength, true, false);
@@ -1586,7 +1586,8 @@ struct Strategy {
                 curLength++;
                 if (i < curSamples.size()) {
                     dispatch(curBusesResult, failEdgeId, int(curSamples[i].size()),
-                             curLength, false, false);
+                             curLength, false, true);
+                    //自己的不能迭代，效果会差
                 } else {
                     dispatch(curBusesResult, failEdgeId, EVERY_SCENE_MAX_FAIL_EDGE_COUNT,
                              curLength, false, false);
