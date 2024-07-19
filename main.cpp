@@ -571,7 +571,8 @@ struct Strategy {
         return path;
     }
 
-    inline vector<Point> baseLineFindPath(Business &business, const vector<Point> &originPath, int maxLength, int curLength) {
+    inline vector<Point>
+    baseLineFindPath(Business &business, const vector<Point> &originPath, int maxLength, int curLength) {
         int from = business.from;
         int to = business.to;
         int width = business.needChannelLength;
@@ -1421,8 +1422,10 @@ struct Strategy {
 
         // 2.根据生成策略生成剩余的数据
         int noBetterCount = 0;
+        int iterateCount = 0;
         int candidateCount = CREATE_SHUFFLE_CANDIDATE_COUNT;
         while (true) {
+            iterateCount++;
             if (curSamples.size() < ME_CREATE_SAMPLE_COUNT) {
                 vector<vector<int>> candidateSamples = myGenerate2(curSamples, SCENE_MAX_FAIL_EDGE_COUNT,
                                                                    CREATE_SHUFFLE_CANDIDATE_COUNT,
@@ -1470,7 +1473,7 @@ struct Strategy {
                 }
                 vector<vector<int>> candidateSamples = myGenerate2(tmpSamples, curCreateLength,
                                                                    candidateCount, 1);
-                vector<int> bestLengthAndScore = getBestLengthAndScore(curSamples, candidateSamples[0]);
+                vector<int> bestLengthAndScore = getBestLengthAndScore(tmpSamples, candidateSamples[0]);
                 if (bestLengthAndScore[1] > minValue) {
                     curSamples[minIndex] = {candidateSamples[0].begin(),
                                             candidateSamples[0].begin() + bestLengthAndScore[0]};
@@ -1489,7 +1492,9 @@ struct Strategy {
             value += curSamplesValue;
         }
 
-        printError("maxValue:" + to_string(totalBusValue * curSamples.size()) + ",value:" + to_string(value));
+        printError(
+                "iterateCount:" + to_string(iterateCount) + ",maxValue:" + to_string(totalBusValue * curSamples.size()) +
+                ",value:" + to_string(value));
 
 
         printMeCreateSamples(curSamples);
