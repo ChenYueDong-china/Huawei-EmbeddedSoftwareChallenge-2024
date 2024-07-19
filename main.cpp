@@ -1095,6 +1095,162 @@ struct Strategy {
     }
 
     vector<vector<int>>
+    myGenerate(vector<vector<int>> &beforeSample, int initLength, int candidateSize, int returnCount, int type) {
+        int saveScores[edges.size()];
+        bool beSelect[edges.size()];
+        memset(saveScores, 0, sizeof saveScores);
+        memset(beSelect, false, sizeof beSelect);
+
+        vector<vector<int>> samples;
+        for (int i = 1; i < edges.size(); i++) {
+            Edge edge = edges[i];
+            int cur = 0;
+            for (int j = 1; j <= CHANNEL_COUNT; j++) {
+                if (edge.channel[j] != -1 && edge.channel[j - 1] != edge.channel[j]) {
+                    if (type == 1) {
+                        cur += buses[edge.channel[j]].value;
+                    } else if (type == 2) {
+                        cur += buses[edge.channel[j]].occupyResource;
+                    } else if (type == 3) {
+                        cur += buses[edge.channel[j]].needChannelLength;
+                    } else if (type == 4) {
+                        cur += buses[edge.channel[j]].value;
+                    } else if (type == 5) {
+                        cur += buses[edge.channel[j]].occupyResource;
+                    } else if (type == 6) {
+                        cur += buses[edge.channel[j]].needChannelLength;
+                    }
+                }
+            }
+            saveScores[i] += cur;
+        }
+        int scores[edges.size()];
+        initLength = min(int(edges.size()) - 1, initLength);
+        candidateSize = min(int(edges.size()) - 1, candidateSize);
+        struct EdgeIdScore {
+            int id;
+            int score;
+        };
+        struct MyBigComparator {
+        public:
+            bool operator()(const EdgeIdScore &a, const EdgeIdScore &b) const {
+                return a.score > b.score;
+            }
+        };
+        struct MyLessComparator {
+        public:
+            bool operator()(const EdgeIdScore &a, const EdgeIdScore &b) const {
+                return a.score < b.score;
+            }
+        };
+        int tryCount = 0;
+        while (samples.size() < returnCount) {
+            memset(beSelect, false, sizeof beSelect);
+            memcpy(scores, saveScores, sizeof scores);
+            vector<int> sample;
+            for (int i = 0; i < initLength; i++) {
+                if (type == 0) {
+                    int index = int(createSampleRad() % (int(edges.size()) - 1)) + 1;
+                    while (beSelect[index]) {
+                        index = int(createSampleRad() % (int(edges.size()) - 1)) + 1;
+                    }
+                    beSelect[index] = true;
+                    sample.push_back(index);
+                    continue;
+                }
+                priority_queue<EdgeIdScore, vector<EdgeIdScore>, MyBigComparator> minScoreQ1;
+                priority_queue<EdgeIdScore, vector<EdgeIdScore>, MyLessComparator> maxScoreQ2;
+                for (int j = 1; j < edges.size(); j++) {
+                    if (beSelect[j]) {
+                        continue;
+                    }
+                    if (type <= 3) {
+                        if (minScoreQ1.size() < candidateSize) {
+                            minScoreQ1.push({j, scores[j]});
+                        }
+                        if (scores[j] > minScoreQ1.top().score) {
+                            minScoreQ1.pop();
+                            minScoreQ1.push({j, scores[j]});
+                        }
+                    } else {
+                        if (maxScoreQ2.size() < candidateSize) {
+                            maxScoreQ2.push({j, scores[j]});
+                        }
+                        if (scores[j] < maxScoreQ2.top().score) {
+                            maxScoreQ2.pop();
+                            maxScoreQ2.push({j, scores[j]});
+                        }
+                    }
+                }
+                //随机选择一个边断掉
+                int index = int(createSampleRad() % candidateSize);
+                int id = -1;
+                for (int j = 0; j <= index; j++) {
+                    if (type <= 3) {
+                        if (minScoreQ1.empty()) {
+                            break;
+                        }
+                        id = minScoreQ1.top().id;
+                        minScoreQ1.pop();
+                    } else {
+                        if (maxScoreQ2.empty()) {
+                            break;
+                        }
+                        id = maxScoreQ2.top().id;
+                        maxScoreQ2.pop();
+                    }
+
+                }
+                beSelect[id] = true;
+
+                //上面路径上的分数减过去
+                vector<int> busIds;
+                Edge &edge = edges[id];
+                for (int j = 1; j <= CHANNEL_COUNT; j++) {
+                    if (edge.channel[j] != -1 && edge.channel[j] != edge.channel[j - 1]) {
+                        busIds.push_back(edge.channel[j]);
+                    }
+                }
+                for (int busId: busIds) {
+                    const vector<Point> &path = busesOriginResult[busId];
+                    for (const Point &point: path) {
+                        if (beSelect[point.edgeId]) {
+                            continue;
+                        }
+                        if (type == 1) {
+                            scores[point.edgeId] -= buses[busId].value;
+                        } else if (type == 2) {
+                            scores[point.edgeId] -= buses[busId].occupyResource;
+                        } else if (type == 3) {
+                            scores[point.edgeId] -= buses[busId].needChannelLength;
+                        } else if (type == 4) {
+                            scores[point.edgeId] += buses[busId].value;
+                        } else if (type == 5) {
+                            scores[point.edgeId] += buses[busId].occupyResource;
+                        } else if (type == 6) {
+                            scores[point.edgeId] += buses[busId].needChannelLength;
+                        }
+                    }
+                }
+                sample.push_back(id);
+            }
+            if (checkSatisfiedSamplesSimilarity(beforeSample, sample)) {
+                samples.push_back(sample);
+            } else {
+                tryCount++;
+                if (tryCount > CREATE_SHUFFLE_MAX_TRY_COUNT) {
+                    if (initLength == 1) {
+                        break;
+                    }
+                    tryCount = 0;
+                    initLength = max(1, (int) (initLength * 0.8));
+                }
+            }
+        }
+        return samples;
+    }
+
+    vector<vector<int>>
     myGenerate2(vector<vector<int>> &beforeSample, int initLength, int candidateSize, const int returnCount) {
         bool beSelect[edges.size()];
         vector<vector<int>> samples;
@@ -1212,7 +1368,10 @@ struct Strategy {
         while (true) {
             iterateCount++;
             if (curSamples.size() < CREATE_SAMPLE_COUNT) {
-
+//                vector<vector<int>> candidateSamples = myGenerate(curSamples, EVERY_SCENE_MAX_FAIL_EDGE_COUNT,
+//                                                                  CREATE_SHUFFLE_CANDIDATE_COUNT,
+//                                                                  CREATE_SAMPLE_CANDIDATE_COUNT
+//                                                                  , 0);
                 vector<vector<int>> candidateSamples = myGenerate2(curSamples, EVERY_SCENE_MAX_FAIL_EDGE_COUNT,
                                                                    CREATE_SHUFFLE_CANDIDATE_COUNT,
                                                                    CREATE_SAMPLE_CANDIDATE_COUNT);
@@ -1257,6 +1416,9 @@ struct Strategy {
                         tmpSamples.push_back(curSamples[i]);
                     }
                 }
+//                vector<vector<int>> candidateSamples = myGenerate(tmpSamples, curCreateLength,
+//                                                                  candidateCount, 1
+//                                                                  , 0);
                 vector<vector<int>> candidateSamples = myGenerate2(tmpSamples, curCreateLength,
                                                                    candidateCount, 1);
                 vector<int> bestLengthAndScore = getBestLengthAndScore(tmpSamples, candidateSamples[0]);
