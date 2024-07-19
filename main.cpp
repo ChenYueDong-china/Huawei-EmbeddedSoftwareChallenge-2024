@@ -23,7 +23,7 @@ const int CREATE_SAMPLE_RANDOM_SEED = 666;//创建样例种子
 const int CREATE_SAMPLE_CANDIDATE_COUNT = 1;//候选序列
 const int CREATE_SHUFFLE_CANDIDATE_COUNT = 30;//，每一次随机从20个中选一个
 const int CREATE_SHUFFLE_MAX_TRY_COUNT = 5;//不满足相似度约束时，最多尝试几次？
-const int CREATE_SAMPLES_MAX_TIME = 40 * 1000;//创建样例最大时间
+const int CREATE_SAMPLES_MAX_TIME = 20 * 1000;//创建样例最大时间
 
 
 //创建常量
@@ -732,7 +732,7 @@ struct Strategy {
         for (int busId: edges[failEdgeId].channel) {
             if (busId != -1 && !buses[busId].die) {
                 assert(buses[busId].id == busId);
-                if (!affectBusinesses.empty() && affectBusinesses[affectBusinesses.size() - 1]
+                if (!affectBusinesses.empty() && affectBusinesses[int(affectBusinesses.size()) - 1]
                                                  == busId) {
                     continue;
                 }
@@ -957,7 +957,7 @@ struct Strategy {
 
                 if (!baseFindPath.empty()) {
                     baseValue += buses[id].value;
-                    baseValue -= int(baseFindPath.size() - originPath.size()) * business.needChannelLength *
+                    baseValue -= (int(baseFindPath.size()) - int(originPath.size())) * business.needChannelLength *
                                  avgEveryChannelValue;
                     for (Point &point: baseFindPath) {
                         vector<int> tmp;
@@ -975,9 +975,8 @@ struct Strategy {
                 }
                 if (!meFindPath.empty()) {
                     meValue += buses[id].value;
-                    meValue -=
-                            int(meFindPath.size() - originPath.size()) * business.needChannelLength *
-                            avgEveryChannelValue;
+                    meValue -= (int(meFindPath.size()) - int(originPath.size())) * business.needChannelLength *
+                               avgEveryChannelValue;
                 }
             }
             createScores[i] = (int) round(meValue - baseValue);
@@ -1300,13 +1299,13 @@ struct Strategy {
                 beSelect[id] = true;
 
                 //上面路径上的分数减过去
-                vector<int> busIds;
-                Edge &edge = edges[id];
-                for (int j = 1; j <= CHANNEL_COUNT; j++) {
-                    if (edge.channel[j] != -1 && edge.channel[j] != edge.channel[j - 1]) {
-                        busIds.push_back(edge.channel[j]);
-                    }
-                }
+//                vector<int> busIds;
+//                Edge &edge = edges[id];
+//                for (int j = 1; j <= CHANNEL_COUNT; j++) {
+//                    if (edge.channel[j] != -1 && edge.channel[j] != edge.channel[j - 1]) {
+//                        busIds.push_back(edge.channel[j]);
+//                    }
+//                }
                 for (vector<int> &pa: baseRepValue[id]) {
                     //base寻的到的+分，让他死
                     int edId = pa[0];
@@ -1326,15 +1325,15 @@ struct Strategy {
                     scores[edId] -= subScore;
                 }
 
-                for (int busId: busIds) {
-                    const vector<Point> &path = busesOriginResult[busId];
-                    for (const Point &point: path) {
-                        if (beSelect[point.edgeId]) {
-                            continue;
-                        }
-                        scores[point.edgeId] -= buses[busId].value;
-                    }
-                }
+//                for (int busId: busIds) {
+//                    const vector<Point> &path = busesOriginResult[busId];
+//                    for (const Point &point: path) {
+//                        if (beSelect[point.edgeId]) {
+//                            continue;
+//                        }
+//                        scores[point.edgeId] -= buses[busId].value;
+//                    }
+//                }
                 sample.push_back(id);
             }
             if (checkSatisfiedSamplesSimilarity(beforeSample, sample)) {
@@ -1375,8 +1374,8 @@ struct Strategy {
                 vector<vector<int>> candidateSamples = myGenerate2(curSamples, EVERY_SCENE_MAX_FAIL_EDGE_COUNT,
                                                                    CREATE_SHUFFLE_CANDIDATE_COUNT,
                                                                    CREATE_SAMPLE_CANDIDATE_COUNT);
-                if (candidateSamples.size() < CREATE_SAMPLE_CANDIDATE_COUNT) {
-                    break;
+                if (candidateSamples.empty()) {
+                    continue;
                 }
 
                 int bestScore = -100000;
@@ -1421,6 +1420,9 @@ struct Strategy {
 //                                                                  , 0);
                 vector<vector<int>> candidateSamples = myGenerate2(tmpSamples, curCreateLength,
                                                                    candidateCount, 1);
+                if (candidateSamples.empty()) {
+                    continue;
+                }
                 vector<int> bestLengthAndScore = getBestLengthAndScore(tmpSamples, candidateSamples[0]);
                 if (bestLengthAndScore[1] > minValue) {
                     curSamples[minIndex] = {candidateSamples[0].begin(),
@@ -1430,7 +1432,7 @@ struct Strategy {
                 } else {
                     noBetterCount++;
                     if (noBetterCount > candidateCount) {
-                        candidateCount = min(int(edges.size() - 1), candidateCount + 1);
+                        candidateCount = min(int(edges.size()) - 1, candidateCount + 1);
                         noBetterCount = 0;
                     }
                 }
