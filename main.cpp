@@ -42,7 +42,7 @@ const int EDGE_LENGTH_WEIGHT = 1000;//边的权重
 
 
 //搜索常量
-static int MAX_E_FAIL_COUNT = 2500;//最大断边数5k
+static int MAX_E_FAIL_COUNT = 2500;//他生成的的样例，最大断边数5k
 const int SEARCH_TIME = 90 * 1000;
 
 //其他常量
@@ -147,7 +147,7 @@ struct Strategy {
     int remainAliveBusCount = 0;//初始状态剩余的资源
     int remainAliveBusValue = 0;//初始状态剩余的资源
     int remainEdgesSize = 0;//初始状态剩余的资源
-    int createScores[MAX_M + 1];//基础分
+    int createScores[MAX_M + 1]{};//基础分
     vector<vector<int>> baseRepValue[MAX_M + 1];//断掉应该增加的分
     vector<vector<int>> baseOriginValue[MAX_M + 1];//断掉应该增加的分
 
@@ -316,10 +316,10 @@ struct Strategy {
             return path;
         }
 
+        //baseLine寻路
         inline static vector<Point>
         baseFind(int start, int end, int width, const vector<NearEdge> searchGraph[MAX_N + 1],
-                 const vector<Edge> &edges, const vector<Vertex> &vertices,
-                 int minDistance[MAX_N + 1][MAX_N + 1], int maxDeep) {
+                 const vector<Edge> &edges) {
             struct Common {
                 int timestamp;
                 int parentEdgeId;
@@ -431,7 +431,7 @@ struct Strategy {
         remainEdgesSize = int(edges.size()) - 1;
     }
 
-    //获得路径经过的顶点
+    //获得路径经过的变通道顶点
     inline unordered_set<int> getOriginChangeV(const Business &business, const vector<Point> &path) {
         unordered_set<int> originChangeV;
         if (!path.empty()) {
@@ -579,15 +579,14 @@ struct Strategy {
         return path;
     }
 
+    // baseLine寻路
     inline vector<Point>
-    baseLineFindPath(Business &business, const vector<Point> &originPath, int maxLength, int curLength) {
+    baseLineFindPath(Business &business) {
         int from = business.from;
         int to = business.to;
         int width = business.needChannelLength;
         int l1 = runtime();
-        vector<Point> path = SearchUtils::baseFind(from, to, width,
-                                                   baseSearchGraph, edges, vertices, minDistance,
-                                                   0);
+        vector<Point> path = SearchUtils::baseFind(from, to, width, baseSearchGraph, edges);
         int r1 = runtime();
         searchTime += r1 - l1;
         return path;
@@ -676,30 +675,6 @@ struct Strategy {
         return totalValue * 1e9 + plus + 1;
     }
 
-    int calculatesSameResource(Business &business, vector<Point> &oldPath, vector<Point> &newPath) {
-        unordered_set<int> changeV1 = getOriginChangeV(business, oldPath);
-        unordered_set<int> changeV2 = getOriginChangeV(business, newPath);
-        int channelResource = 0;
-        int changChannelResource = 0;
-        for (int i: changeV1) {
-            if (changeV2.count(i)) {
-                changChannelResource += CHANGE_CHANNEL_WEIGHT;
-            }
-        }
-        unordered_map<int, int> ids1 = getOriginEdgeIds(oldPath);
-        unordered_map<int, int> ids2 = getOriginEdgeIds(newPath);
-        for (auto &entry1: ids1) {
-            if (ids2.count(entry1.first)) {
-                int startChannel1 = entry1.second;
-                int startChannel2 = ids2[entry1.first];
-                int endChannel1 = startChannel1 + business.needChannelLength;
-                int endChannel2 = startChannel2 + business.needChannelLength;
-                changChannelResource += EDGE_LENGTH_WEIGHT * max(0, min(endChannel1, endChannel2)
-                                                                    - max(startChannel1, startChannel2) + 1);
-            }
-        }
-        return channelResource + changChannelResource;
-    }
 
 //简单获得一个基础分
     inline unordered_map<int, vector<Point>>
@@ -710,7 +685,7 @@ struct Strategy {
             Business &business = buses[id];
             vector<Point> path;
             if (base) {
-                path = baseLineFindPath(business, curBusesResult[business.id], maxLength, curLength);
+                path = baseLineFindPath(business);
             } else {
                 path = aStarFindPath(business, curBusesResult[business.id], maxLength, curLength);
             }
@@ -718,9 +693,6 @@ struct Strategy {
                 //变通道次数得减回去
                 redoBusiness(business, path, curBusesResult[business.id]);
                 satisfyBusesResult[business.id] = std::move(path);
-//                int newResource = calculatesResource(path);
-//                remainResource -= newResource;
-//                remainResource += calculatesSameResource(business, curBusesResult[business.id], path);
             }
         }
         return satisfyBusesResult;
@@ -729,7 +701,7 @@ struct Strategy {
     //核心调度函数
     inline void
     dispatch(vector<vector<Point>> &curBusesResult, int failEdgeId, int maxLength, int curLength, bool base,
-             bool test) {
+             bool test, bool shouldPrintf) {
         assert(failEdgeId != 0);
         edges[failEdgeId].die = true;
         if (!test) {
@@ -778,7 +750,7 @@ struct Strategy {
 
 
         //2.去掉不可能寻到路径的业务，但是因为有重边重顶点，不一定准确，大概准确
-        if (!test) {
+        if (!base && !test) {
             vector<int> tmp;//还是稍微有点用，减少个数
             for (int id: affectBusinesses) {
                 Business &business = buses[id];
@@ -830,28 +802,10 @@ struct Strategy {
             iteration++;
         }
         redoResult(affectBusinesses, bestResult, curBusesResult);
-        if (!test) {
+        if (shouldPrintf) {
             printResult(bestResult);
         }
 
-        //测试资源
-        int remain = totalResource;
-        for (int i = 1; i < edges.size(); i++) {
-            Edge &edge = edges[i];
-            for (int j = 1; j <= CHANNEL_COUNT; j++) {
-                if (edge.die || edge.channel[j] != -1) {
-                    remain -= EDGE_LENGTH_WEIGHT;
-                }
-            }
-        }
-        for (int i = 1; i < vertices.size(); i++) {
-            Vertex &vertex = vertices[i];
-            remain -= CHANGE_CHANNEL_WEIGHT * (vertex.maxChangeCount - vertex.curChangeCount);
-        }
-        assert(remain == remainResource);
-        if (remain != remainResource) {
-            printf("111");
-        }
     }
 
     static int calculatesResource(const vector<Point> &path) {
@@ -998,7 +952,7 @@ struct Strategy {
             for (int id: ids) {
                 const vector<Point> &originPath = busesOriginResult[id];
                 Business &business = buses[id];
-                vector<Point> baseFindPath = baseLineFindPath(business, originPath, EVERY_SCENE_MAX_FAIL_EDGE_COUNT, 0);
+                vector<Point> baseFindPath = baseLineFindPath(business);
                 vector<Point> meFindPath = aStarFindPath(business, originPath, EVERY_SCENE_MAX_FAIL_EDGE_COUNT, 0);
 
                 if (!baseFindPath.empty()) {
@@ -1061,169 +1015,6 @@ struct Strategy {
         return true;
     }
 
-    vector<vector<int>> myGenerate(vector<vector<int>> &beforeSample, int type, bool subOnlyOne, int returnCount) {
-        int saveScores[edges.size()];
-        bool beSelect[edges.size()];
-        bool beSelectBus[buses.size()];
-        memset(saveScores, 0, sizeof saveScores);
-        memset(beSelect, false, sizeof beSelect);
-        memset(beSelectBus, false, sizeof beSelectBus);
-
-        vector<vector<int>> samples;
-        for (int i = 1; i < edges.size(); i++) {
-            Edge edge = edges[i];
-            int cur = 0;
-            for (int j = 1; j <= CHANNEL_COUNT; j++) {
-                if (edge.channel[j] != -1 && edge.channel[j - 1] != edge.channel[j]) {
-                    if (type == 1) {
-                        cur += buses[edge.channel[j]].value;
-                    } else if (type == 2) {
-                        cur += buses[edge.channel[j]].occupyResource;
-                    } else if (type == 3) {
-                        cur += buses[edge.channel[j]].needChannelLength;
-                    } else if (type == 4) {
-                        cur += buses[edge.channel[j]].value;
-                    } else if (type == 5) {
-                        cur += buses[edge.channel[j]].occupyResource;
-                    } else if (type == 6) {
-                        cur += buses[edge.channel[j]].needChannelLength;
-                    }
-                }
-            }
-            saveScores[i] += cur;
-        }
-        int scores[edges.size()];
-        int initLength = min(int(edges.size()) - 1, EVERY_SCENE_MAX_FAIL_EDGE_COUNT);
-        int candidateSize = min(int(edges.size()) - 1, CREATE_SHUFFLE_CANDIDATE_COUNT);
-        struct EdgeIdScore {
-            int id;
-            int score;
-        };
-        struct MyBigComparator {
-        public:
-            bool operator()(const EdgeIdScore &a, const EdgeIdScore &b) const {
-                return a.score > b.score;
-            }
-        };
-        struct MyLessComparator {
-        public:
-            bool operator()(const EdgeIdScore &a, const EdgeIdScore &b) const {
-                return a.score < b.score;
-            }
-        };
-        int tryCount = 0;
-        while (samples.size() < returnCount) {
-            memset(beSelect, false, sizeof beSelect);
-            memset(beSelectBus, false, sizeof beSelectBus);
-            memcpy(scores, saveScores, sizeof scores);
-            vector<int> sample;
-            for (int i = 0; i < initLength; i++) {
-                if (type == 0) {
-                    int index = int(createSampleRad() % (int(edges.size()) - 1)) + 1;
-                    while (beSelect[index]) {
-                        index = int(createSampleRad() % (int(edges.size()) - 1)) + 1;
-                    }
-                    beSelect[index] = true;
-                    sample.push_back(index);
-                    continue;
-                }
-                priority_queue<EdgeIdScore, vector<EdgeIdScore>, MyBigComparator> maxScoreQ1;
-                priority_queue<EdgeIdScore, vector<EdgeIdScore>, MyLessComparator> maxScoreQ2;
-                for (int j = 1; j < edges.size(); j++) {
-                    if (beSelect[j]) {
-                        continue;
-                    }
-                    if (type <= 3) {
-                        if (maxScoreQ1.size() < candidateSize) {
-                            maxScoreQ1.push({j, scores[j]});
-                        }
-                        if (scores[j] > maxScoreQ1.top().score) {
-                            maxScoreQ1.pop();
-                            maxScoreQ1.push({j, scores[j]});
-                        }
-                    } else {
-                        if (maxScoreQ2.size() < candidateSize) {
-                            maxScoreQ2.push({j, scores[j]});
-                        }
-                        if (scores[j] < maxScoreQ2.top().score) {
-                            maxScoreQ2.pop();
-                            maxScoreQ2.push({j, scores[j]});
-                        }
-                    }
-                }
-                //随机选择一个边断掉
-                int index = int(createSampleRad() % candidateSize);
-                int id = -1;
-                for (int j = 0; j <= index; j++) {
-                    if (type <= 3) {
-                        if (maxScoreQ1.empty()) {
-                            break;
-                        }
-                        id = maxScoreQ1.top().id;
-                        maxScoreQ1.pop();
-                    } else {
-                        if (maxScoreQ2.empty()) {
-                            break;
-                        }
-                        id = maxScoreQ2.top().id;
-                        maxScoreQ2.pop();
-                    }
-
-                }
-                beSelect[id] = true;
-
-                //上面路径上的分数减过去
-                vector<int> busIds;
-                Edge &edge = edges[id];
-                for (int j = 1; j <= CHANNEL_COUNT; j++) {
-                    if (edge.channel[j] != -1 && edge.channel[j] != edge.channel[j - 1]) {
-                        busIds.push_back(edge.channel[j]);
-                    }
-                }
-                for (int busId: busIds) {
-                    if (subOnlyOne && beSelectBus[busId]) {
-                        continue;
-                    }
-                    beSelectBus[busId] = true;
-                    const vector<Point> &path = busesOriginResult[busId];
-                    for (const Point &point: path) {
-                        if (beSelect[point.edgeId]) {
-                            continue;
-                        }
-                        if (type == 1) {
-                            scores[point.edgeId] -= buses[busId].value;
-                        } else if (type == 2) {
-                            scores[point.edgeId] -= buses[busId].occupyResource;
-                        } else if (type == 3) {
-                            scores[point.edgeId] -= buses[busId].needChannelLength;
-                        } else if (type == 4) {
-                            scores[point.edgeId] += buses[busId].value;
-                        } else if (type == 5) {
-                            scores[point.edgeId] += buses[busId].occupyResource;
-                        } else if (type == 6) {
-                            scores[point.edgeId] += buses[busId].needChannelLength;
-                        }
-
-                    }
-                }
-                sample.push_back(id);
-            }
-            if (checkSatisfiedSamplesSimilarity(beforeSample, sample)) {
-                samples.push_back(sample);
-            } else {
-                tryCount++;
-                if (tryCount > CREATE_SHUFFLE_MAX_TRY_COUNT) {
-                    if (initLength == 1) {
-                        break;
-                    }
-                    tryCount = 0;
-                    initLength = max(1, (int) (initLength * 0.8));
-                }
-            }
-        }
-        return samples;
-    }
-
     vector<int> getAllUnDieBusinessId(int failEdgeId) {
         vector<int> result;
         Edge &edge = edges[failEdgeId];
@@ -1253,7 +1044,7 @@ struct Strategy {
             for (int j = 0; j < sample.size(); j++) {
                 int failEdgeId = sample[j];
                 vector<int> beforeIds = getAllUnDieBusinessId(failEdgeId);
-                dispatch(curBusesResult, failEdgeId, int(sample.size()), curLength, i != 0, true);
+                dispatch(curBusesResult, failEdgeId, int(sample.size()), curLength, i != 0, true, false);
                 for (int beforeId: beforeIds) {
                     if (buses[beforeId].die) {
                         remainValue -= buses[beforeId].value;
@@ -1286,7 +1077,7 @@ struct Strategy {
         return result;
     }
 
-    static void printMeCreateSamples(vector<vector<int>> &curSamples) {
+    static void printMeCreateSamples(const vector<vector<int>> &curSamples) {
         //输出
         printf("%d\n", int(curSamples.size()));
         for (const vector<int> &curSample: curSamples) {
@@ -1413,28 +1204,6 @@ struct Strategy {
         vector<int> curSamplesValues;
 
         //1.选定最好生成策略
-        int bestType = 0;
-        bool bestSubOnlyOne = false;
-        maxScore = -100000;
-//        for (int i = 0; i < 7; i++) {
-//            for (int j = 0; j < 2; j++) {
-//                bool subOnlyOne = i == 0;
-//                vector<vector<int>> candidateSamples = myGenerate(curSamples, i, subOnlyOne, 1);
-//
-//                for (vector<int> &candidateSample: candidateSamples) {
-//                    vector<int> bestLengthAndScore = getBestLengthAndScore(curSamples, candidateSample);
-//                    if (bestLengthAndScore[1] > maxScore) {
-//                        maxScore = bestLengthAndScore[1];
-//                        bestSubOnlyOne = subOnlyOne;
-//                        bestType = i;
-//                        bestSample = {candidateSample.begin(), candidateSample.begin() + bestLengthAndScore[0]};
-//                    }
-//                    bestSample = candidateSample;
-//                }
-//            }
-//        }
-//
-//        curSamples.push_back(bestSample);
 
         // 2.根据生成策略生成剩余的数据
         int noBetterCount = 0;
@@ -1534,10 +1303,10 @@ struct Strategy {
                         int curLength = k + 1;
                         if (i == 0) {
                             dispatch(curBusesResult, failEdgeId, int(curSample.size()),
-                                     curLength, false, true);
+                                     curLength, false, true, true);
                         } else {
                             dispatch(curBusesResult, failEdgeId, EVERY_SCENE_MAX_FAIL_EDGE_COUNT,
-                                     curLength, true, false);
+                                     curLength, true, false, true);
                         }
                     }
                     //邻接表
@@ -1586,11 +1355,11 @@ struct Strategy {
                 curLength++;
                 if (i < curSamples.size()) {
                     dispatch(curBusesResult, failEdgeId, int(curSamples[i].size()),
-                             curLength, false, true);
+                             curLength, false, true, true);
                     //自己的不能迭代，效果会差
                 } else {
                     dispatch(curBusesResult, failEdgeId, EVERY_SCENE_MAX_FAIL_EDGE_COUNT,
-                             curLength, false, false);
+                             curLength, false, false, true);
                 }
             }
             maxLength = curLength;
