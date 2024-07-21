@@ -18,12 +18,12 @@
 using namespace std;
 
 //创建参数
-const bool LOCAL_TEST_CREATE = false;//线上改为false
-const int CREATE_SAMPLE_RANDOM_SEED = 6;//创建样例种子
-const int CREATE_SAMPLE_CANDIDATE_COUNT = 5;//候选序列
+const bool LOCAL_TEST_CREATE = true;//线上改为false
+const int CREATE_SAMPLE_RANDOM_SEED = 666;//创建样例种子
+const int CREATE_SAMPLE_CANDIDATE_COUNT = 1;//候选序列
 const int CREATE_SHUFFLE_CANDIDATE_COUNT = 30;//，每一次随机从20个中选一个
 const int CREATE_SHUFFLE_MAX_TRY_COUNT = 5;//不满足相似度约束时，最多尝试几次？
-const int CREATE_SAMPLES_MAX_TIME = 74 * 1000;//创建样例最大时间
+const int CREATE_SAMPLES_MAX_TIME = 40 * 1000;//创建样例最大时间
 
 
 //创建常量
@@ -1442,151 +1442,116 @@ struct Strategy {
         vector<int> curSamplesValues;
 
         //1.选定最好生成策略
-        int bestType = 0;
-        int maxScore_ = -100000;
-//        for (int i = 0; i < 7; i++) {
-//            vector<vector<int>> candidateSamples;
-//            if (i == 0) {
-//                candidateSamples = myGenerate2(curSamples, EVERY_SCENE_MAX_FAIL_EDGE_COUNT,
-//                                               CREATE_SHUFFLE_CANDIDATE_COUNT,
-//                                               CREATE_SAMPLE_CANDIDATE_COUNT);
-//            } else {
-//                candidateSamples = myGenerate(curSamples, EVERY_SCENE_MAX_FAIL_EDGE_COUNT,
-//                                              CREATE_SHUFFLE_CANDIDATE_COUNT,
-//                                              CREATE_SAMPLE_CANDIDATE_COUNT, i);
-//            }
-//            for (vector<int> &candidateSample: candidateSamples) {
-//                vector<int> bestLengthAndScore = getBestLengthAndScore(curSamples, candidateSample);
-//                if (bestLengthAndScore[1] > maxScore_) {
-//                    maxScore_ = bestLengthAndScore[1];
-//                    bestType = i;
-//                }
-//            }
-//        }
+
+
 
 
 
         // 2.根据生成策略生成剩余的数据
-//        int noBetterCount = 0;
-//        int iterateCount = 0;
-//        int candidateCount = CREATE_SHUFFLE_CANDIDATE_COUNT;
-//        while (true) {
-//            iterateCount++;
-//            if (curSamples.size() < CREATE_SAMPLE_COUNT) {
-//                vector<vector<int>> candidateSamples;
-//                if (bestType != 0) {
-//                    candidateSamples = myGenerate(curSamples, EVERY_SCENE_MAX_FAIL_EDGE_COUNT,
-//                                                  CREATE_SHUFFLE_CANDIDATE_COUNT,
-//                                                  CREATE_SAMPLE_CANDIDATE_COUNT, bestType);
-//                } else {
-//                    candidateSamples = myGenerate2(curSamples, EVERY_SCENE_MAX_FAIL_EDGE_COUNT,
-//                                                   CREATE_SHUFFLE_CANDIDATE_COUNT,
-//                                                   CREATE_SAMPLE_CANDIDATE_COUNT);
-//                }
-////                vector<vector<int>> candidateSamples = myGenerate(curSamples, EVERY_SCENE_MAX_FAIL_EDGE_COUNT,
-////                                                                  CREATE_SHUFFLE_CANDIDATE_COUNT,
-////                                                                  CREATE_SAMPLE_CANDIDATE_COUNT
-////                                                                  , 0);
-////                vector<vector<int>> candidateSamples = myGenerate2(curSamples, EVERY_SCENE_MAX_FAIL_EDGE_COUNT,
-////                                                                   CREATE_SHUFFLE_CANDIDATE_COUNT,
-////                                                                   CREATE_SAMPLE_CANDIDATE_COUNT);
-//                if (candidateSamples.empty()) {
-//                    continue;
-//                }
-//
-//                int bestScore = -100000;
-//                vector<int> bestSample;
-//                for (vector<int> &candidateSample: candidateSamples) {
-//                    vector<int> bestLengthAndScore = getBestLengthAndScore(curSamples, candidateSample);
-//                    if (bestLengthAndScore[1] > bestScore) {
-//                        bestScore = bestLengthAndScore[1];
-//                        bestSample = {candidateSample.begin(), candidateSample.begin() + bestLengthAndScore[0]};
-//                    }
-//                }
-//                curSamples.push_back(bestSample);
-//                curSamplesValues.push_back(bestScore);
-//            } else {
-//                int minIndex = 0;
-//                int minValue = curSamplesValues[0];
-//                int minSampleLength = int(curSamples[0].size());
-//                int maxSampleLength = int(curSamples[0].size());
-//                for (int i = 1; i < curSamples.size(); i++) {
-//                    if (curSamplesValues[i] < minValue) {
-//                        minIndex = i;
-//                        minValue = curSamplesValues[i];
-//                    }
-//                    if (curSamples[i].size() < minSampleLength) {
-//                        minSampleLength = int(curSamples[i].size());
-//                    }
-//
-//                    if (int(curSamples[i].size()) > maxSampleLength) {
-//                        maxSampleLength = int(curSamples[i].size());
-//                    }
-//                }
-//
-//                vector<int> sameIndexes;//相同随机选一个
-//                for (int i = 0; i < curSamples.size(); i++) {
-//                    if (curSamplesValues[i] == minValue) {
-//                        sameIndexes.push_back(i);
-//                    }
-//                }
-//                minIndex = int(createSampleRad() % int(sameIndexes.size()));
-//
-//                //todo 可以再加1随机
-//                int curCreateLength =
-//                        minSampleLength + int(createSampleRad() % (maxSampleLength - minSampleLength + 1));
-//                vector<vector<int>> tmpSamples;
-//                for (int i = 0; i < curSamples.size(); i++) {
-//                    if (minIndex != i) {
-//                        tmpSamples.push_back(curSamples[i]);
-//                    }
-//                }
-////                vector<vector<int>> candidateSamples = myGenerate(tmpSamples, curCreateLength,
-////                                                                  candidateCount, 1
-////                                                                  , 0);
-////                vector<vector<int>> candidateSamples = myGenerate2(tmpSamples, curCreateLength,
-////                                                                   candidateCount, 1);
-//                vector<vector<int>> candidateSamples;
-//                if (bestType != 0) {
-//                    candidateSamples = myGenerate(tmpSamples, curCreateLength,
-//                                                  candidateCount, 1, bestType);
-//                } else {
-//                    candidateSamples = myGenerate2(tmpSamples, curCreateLength,
-//                                                   candidateCount, 1);
-//                }
-//
-//                if (candidateSamples.empty()) {
-//                    continue;
-//                }
-//                vector<int> bestLengthAndScore = getBestLengthAndScore(tmpSamples, candidateSamples[0]);
-//                if (bestLengthAndScore[1] > minValue) {
-//                    curSamples[minIndex] = {candidateSamples[0].begin(),
-//                                            candidateSamples[0].begin() + bestLengthAndScore[0]};
-//                    curSamplesValues[minIndex] = bestLengthAndScore[1];
-//                    noBetterCount = 0;
-//                } else {
-//                    noBetterCount++;
+        int noBetterCount = 0;
+        int iterateCount = 0;
+        int candidateCount = CREATE_SHUFFLE_CANDIDATE_COUNT;
+        int totalScore = 0;
+        while (true) {
+            iterateCount++;
+            if (curSamples.size() < CREATE_SAMPLE_COUNT) {
+
+                vector<vector<int>> candidateSamples = myGenerate2(curSamples, EVERY_SCENE_MAX_FAIL_EDGE_COUNT,
+                                                                   CREATE_SHUFFLE_CANDIDATE_COUNT,
+                                                                   CREATE_SAMPLE_CANDIDATE_COUNT);
+
+                if (candidateSamples.empty()) {
+                    continue;
+                }
+
+                int bestScore = -100000;
+                vector<int> bestSample;
+                for (vector<int> &candidateSample: candidateSamples) {
+                    vector<int> bestLengthAndScore = getBestLengthAndScore(curSamples, candidateSample);
+                    if (bestLengthAndScore[1] > bestScore) {
+                        bestScore = bestLengthAndScore[1];
+                        bestSample = {candidateSample.begin(), candidateSample.begin() + bestLengthAndScore[0]};
+                    }
+                }
+                curSamples.push_back(bestSample);
+                curSamplesValues.push_back(bestScore);
+            } else {
+                int minIndex = 0;
+                int minValue = curSamplesValues[0];
+
+                int minSampleLength = int(curSamples[0].size());
+                int maxSampleLength = int(curSamples[0].size());
+                for (int i = 1; i < curSamples.size(); i++) {
+                    totalScore += curSamplesValues[i];
+
+                    if (curSamples[i].size() < minSampleLength) {
+                        minSampleLength = int(curSamples[i].size());
+                    }
+
+                    if (int(curSamples[i].size()) > maxSampleLength) {
+                        maxSampleLength = int(curSamples[i].size());
+                    }
+                }
+
+                vector<int> sameIndexes;//相同随机选一个
+                for (int i = 0; i < curSamples.size(); i++) {
+                    if (curSamplesValues[i] == minValue) {
+                        sameIndexes.push_back(i);
+                    }
+                }
+                minIndex = int(createSampleRad() % int(sameIndexes.size()));
+
+                //todo 可以再加1随机
+                int curCreateLength =
+                        minSampleLength + int(createSampleRad() % (maxSampleLength - minSampleLength + 1));
+                vector<vector<int>> tmpSamples;
+                for (int i = 0; i < curSamples.size(); i++) {
+                    if (minIndex != i) {
+                        tmpSamples.push_back(curSamples[i]);
+                    }
+                }
+
+                vector<vector<int>> candidateSamples = myGenerate2(tmpSamples, curCreateLength,
+                                                                   candidateCount, 1);
+
+                if (candidateSamples.empty()) {
+                    continue;
+                }
+                vector<int> bestLengthAndScore = getBestLengthAndScore(tmpSamples, candidateSamples[0]);
+                if (bestLengthAndScore[1] > minValue) {
+                    curSamples[minIndex] = {candidateSamples[0].begin(),
+                                            candidateSamples[0].begin() + bestLengthAndScore[0]};
+                    curSamplesValues[minIndex] = bestLengthAndScore[1];
+                    noBetterCount = 0;
+                } else {
+                    noBetterCount++;
 //                    if (noBetterCount > candidateCount) {
 //                        candidateCount = min(int(edges.size()) - 1, candidateCount + 1);
 //                        noBetterCount = 0;
 //                    }
-//                }
-//            }
-//            long curTime = runtime();
-//            if (curTime > CREATE_SAMPLES_MAX_TIME) {
-//                break;
-//            }
-//
-//        }
-//        int value = 0;
-//        for (int curSamplesValue: curSamplesValues) {
-//            value += curSamplesValue;
-//        }
-//
-//        printError(
-//                "iterateCount:" + to_string(iterateCount) + ",maxValue:" +
-//                to_string(totalBusValue * curSamples.size()) +
-//                ",value:" + to_string(value));
+                }
+            }
+            long curTime = runtime();
+            if (curTime > CREATE_SAMPLES_MAX_TIME) {
+                break;
+            }
+            totalScore = 0;
+            for (const auto &item: curSamplesValues) {
+                totalScore += item;
+            }
+            printError("iterateCount:" + to_string(iterateCount) + ",totalScore:" + to_string(totalScore)
+                       + ",noBetterCount:" + to_string(noBetterCount));
+
+
+        }
+        int value = 0;
+        for (int curSamplesValue: curSamplesValues) {
+            value += curSamplesValue;
+        }
+
+        printError("iterateCount:" + to_string(iterateCount) + ",maxValue:" +
+                   to_string(totalBusValue * curSamples.size()) +
+                   ",value:" + to_string(value) + ",noBetterCount:" + to_string(noBetterCount));
 
 
         printMeCreateSamples(curSamples);
