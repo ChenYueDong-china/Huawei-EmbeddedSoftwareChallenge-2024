@@ -1518,8 +1518,18 @@ struct Strategy {
                                       candidateSamples[bestSampleIndex[0]].begin() +
                                       bestSampleIndex[1]};
             int bestScore = bestSampleIndex[2];
+            int bestLength = int(candidateSamples[bestSampleIndex[0]].size());
+            if (bestSampleIndex[1] != candidateSamples[bestSampleIndex[0]].size()) {
+                //换一个最大长度，再次计算一下
+                vector<int> bestLengthAndScore2 = getBestLengthAndScore(curSamples, bestSample);
+                if (bestLengthAndScore2[1] > bestScore) {
+                    bestLength = int(bestSample.size());
+                    bestSample = {bestSample.begin(), bestSample.begin() + bestLengthAndScore2[0]};
+                    bestScore = bestLengthAndScore2[1];
+                }
+            }
             curSamples.push_back(bestSample);
-            results.push_back({bestScore, int(candidateSamples[bestSampleIndex[0]].size()), bestSample});
+            results.push_back({bestScore, bestLength, bestSample});
             int totalValue = 0;
             for (const SampleResult &result: results) {
                 totalValue += result.value;
@@ -1637,7 +1647,7 @@ struct Strategy {
         //1.选定最好生成策略
         vector<SampleResult> results;
         createBaseSamples(results, CREATE_SAMPLE_CANDIDATE_COUNT, CREATE_BASE_SAMPLES_MAX_TIME);
-        optimizeSamples(results, 0);
+        //optimizeSamples(results, 0);
         vector<vector<int>> curSamples;
         int shouldValue = 0;
         for (const SampleResult &result: results) {
