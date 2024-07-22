@@ -1653,7 +1653,7 @@ struct Strategy {
         //1.选定最好生成策略
         vector<SampleResult> results;
         createBaseSamples(results, CREATE_SAMPLE_CANDIDATE_COUNT, CREATE_BASE_SAMPLES_MAX_TIME);
-        //optimizeSamples(results, 0);
+        optimizeSamples(results, 0);
         vector<vector<int>> curSamples;
         int shouldValue = 0;
         for (const SampleResult &result: results) {
