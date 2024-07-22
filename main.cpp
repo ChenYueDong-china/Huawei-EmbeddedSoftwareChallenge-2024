@@ -1571,20 +1571,19 @@ struct Strategy {
             vector<int> bestSampleIndex = getBestSample(tmpSamples, candidateSamples);
             int bestScore = bestSampleIndex[2];
             if (bestScore > minValue) {
+                int bestLength = int(candidateSamples[bestSampleIndex[0]].size());
                 vector<int> bestSample = {candidateSamples[bestSampleIndex[0]].begin(),
                                           candidateSamples[bestSampleIndex[0]].begin() + bestSampleIndex[1]};
-//                if (bestSampleIndex[1] != candidateSamples[bestSampleIndex[0]].size()) {
-//                    //再次计算一下
-//                    vector<int> bestLengthAndScore2 = getBestLengthAndScore(tmpSamples, bestSample);
-//                    bestSample = {bestSample.begin(), bestSample.begin() + bestLengthAndScore2[0]};
-//                    //assert bestLengthAndScore2.get(1) == bestScore;
-////                    if(bestScore>bestLengthAndScore2[1]){
-////                        printf("ddd");
-////                    }
-//                    bestScore = bestLengthAndScore2[1];
-//
-//                }
-                results[minIndex] = {bestScore, int(candidateSamples[bestSampleIndex[0]].size()), bestSample};
+                if (bestSampleIndex[1] != candidateSamples[bestSampleIndex[0]].size()) {
+                    //换一个最大长度，再次计算一下
+                    vector<int> bestLengthAndScore2 = getBestLengthAndScore(tmpSamples, bestSample);
+                    if (bestLengthAndScore2[1] > bestScore) {
+                        bestLength = int(bestSample.size());
+                        bestSample = {bestSample.begin(), bestSample.begin() + bestLengthAndScore2[0]};
+                        bestScore = bestLengthAndScore2[1];
+                    }
+                }
+                results[minIndex] = {bestScore, bestLength, bestSample};
                 noBetterCount = 0;
             } else {
                 noBetterCount++;
