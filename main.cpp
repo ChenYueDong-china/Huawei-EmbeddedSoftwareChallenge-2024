@@ -18,12 +18,12 @@
 using namespace std;
 
 //创建参数
-const bool LOCAL_TEST_CREATE = true;//线上改为false
-const int CREATE_SAMPLE_RANDOM_SEED = 666;//创建样例种子
-const int CREATE_SAMPLE_CANDIDATE_COUNT = 1;//候选序列
+const bool LOCAL_TEST_CREATE = false;//线上改为false
+const int CREATE_SAMPLE_RANDOM_SEED = 3;//创建样例种子
+const int CREATE_SAMPLE_CANDIDATE_COUNT = 80;//候选序列
 const int CREATE_SHUFFLE_CANDIDATE_COUNT = 30;//，每一次随机从20个中选一个
 const int CREATE_SHUFFLE_MAX_TRY_COUNT = 5;//不满足相似度约束时，最多尝试几次？
-const int CREATE_SAMPLES_MAX_TIME = 40 * 1000;//创建样例最大时间
+const int CREATE_SAMPLES_MAX_TIME = 90 * 1000;//创建样例最大时间
 
 
 //创建常量
@@ -330,6 +330,7 @@ struct Strategy {
             timestampId++;
             int endChannel = -1;
             queue<int> q;
+//            priority_queue<int> q;
             for (int i = 1; i <= CHANNEL_COUNT; ++i) {
                 common[i][start].timestamp = timestampId;
                 q.emplace((i << 16) + start);
@@ -773,18 +774,18 @@ struct Strategy {
             curHandleCount++;
         }
         remainEdgesSize--;
-        for (auto i = searchGraph[edges[failEdgeId].from].begin(); i < searchGraph[edges[failEdgeId].from].end(); ++i) {
-            if (i->id == failEdgeId) {
-                searchGraph[edges[failEdgeId].from].erase(i);
-                break;
-            }
-        }
-        for (auto i = searchGraph[edges[failEdgeId].to].begin(); i < searchGraph[edges[failEdgeId].to].end(); ++i) {
-            if (i->id == failEdgeId) {
-                searchGraph[edges[failEdgeId].to].erase(i);
-                break;
-            }
-        }
+//        for (auto i = searchGraph[edges[failEdgeId].from].begin(); i < searchGraph[edges[failEdgeId].from].end(); ++i) {
+//            if (i->id == failEdgeId) {
+//                searchGraph[edges[failEdgeId].from].erase(i);
+//                break;
+//            }
+//        }
+//        for (auto i = searchGraph[edges[failEdgeId].to].begin(); i < searchGraph[edges[failEdgeId].to].end(); ++i) {
+//            if (i->id == failEdgeId) {
+//                searchGraph[edges[failEdgeId].to].erase(i);
+//                break;
+//            }
+//        }
         for (int i = 1; i <= CHANNEL_COUNT; i++) {
             //额外减少的资源
             if (edges[failEdgeId].channel[i] == -1) {
@@ -794,7 +795,9 @@ struct Strategy {
 
         //1.求受影响的业务
         vector<int> affectBusinesses;
-        for (int busId: edges[failEdgeId].channel) {
+
+        for (int i = CHANNEL_COUNT; i >= 1; --i) {
+            int busId = edges[failEdgeId].channel[i];
             if (busId != -1 && !buses[busId].die) {
                 assert(buses[busId].id == busId);
                 if (!affectBusinesses.empty() && affectBusinesses[int(affectBusinesses.size()) - 1]
@@ -804,6 +807,30 @@ struct Strategy {
                 affectBusinesses.push_back(busId);
             }
         }
+        if (base) {
+            std::sort(affectBusinesses.begin(), affectBusinesses.end(), [&](int aId, int bId) {
+                return aId < bId;
+            });
+            sort(affectBusinesses.begin(), affectBusinesses.end(), [&](int aId, int bId) {
+                return buses[aId].value > buses[bId].value;
+            });
+            //先按id小的排序，因为他不是看边，是直接遍历是否未被影响
+        }else{
+            sort(affectBusinesses.begin(), affectBusinesses.end(), [&](int aId, int bId) {
+                //return buses[aId].value > buses[bId].value;
+                return buses[aId].occupyResource > buses[bId].occupyResource;
+            });
+        }
+//        for (int busId: edges[failEdgeId].channel) {
+//            if (busId != -1 && !buses[busId].die) {
+//                assert(buses[busId].id == busId);
+//                if (!affectBusinesses.empty() && affectBusinesses[int(affectBusinesses.size()) - 1]
+//                                                 == busId) {
+//                    continue;
+//                }
+//                affectBusinesses.push_back(busId);
+//            }
+//        }
         sort(affectBusinesses.begin(), affectBusinesses.end(), [&](int aId, int bId) {
             if (base) {
 
@@ -936,6 +963,9 @@ struct Strategy {
         for (int i = 1; i <= N; ++i) {
             searchGraph[i] = graph[i];
             baseSearchGraph[i] = graph[i];
+//            sort(baseSearchGraph[i].begin(), baseSearchGraph[i].end(), [](const NearEdge &o1, const NearEdge &o2) {
+//                return o1.to > o2.to;
+//            });
         }
         for (int start = 1; start <= N; ++start) {
             for (int i = 1; i <= N; ++i) {
@@ -1448,159 +1478,163 @@ struct Strategy {
 
 
         // 2.根据生成策略生成剩余的数据
-        int noBetterCount = 0;
-        int iterateCount = 0;
-        int candidateCount = CREATE_SHUFFLE_CANDIDATE_COUNT;
-        int totalScore = 0;
-        while (true) {
-            iterateCount++;
-            if (curSamples.size() < CREATE_SAMPLE_COUNT) {
-
-                vector<vector<int>> candidateSamples = myGenerate2(curSamples, EVERY_SCENE_MAX_FAIL_EDGE_COUNT,
-                                                                   CREATE_SHUFFLE_CANDIDATE_COUNT,
-                                                                   CREATE_SAMPLE_CANDIDATE_COUNT);
-
-                if (candidateSamples.empty()) {
-                    continue;
-                }
-
-                int bestScore = -100000;
-                vector<int> bestSample;
-                for (vector<int> &candidateSample: candidateSamples) {
-                    vector<int> bestLengthAndScore = getBestLengthAndScore(curSamples, candidateSample);
-                    if (bestLengthAndScore[1] > bestScore) {
-                        bestScore = bestLengthAndScore[1];
-                        bestSample = {candidateSample.begin(), candidateSample.begin() + bestLengthAndScore[0]};
-                    }
-                }
-                curSamples.push_back(bestSample);
-                curSamplesValues.push_back(bestScore);
-            } else {
-                int minIndex = 0;
-                int minValue = curSamplesValues[0];
-
-                int minSampleLength = int(curSamples[0].size());
-                int maxSampleLength = int(curSamples[0].size());
-                for (int i = 1; i < curSamples.size(); i++) {
-                    totalScore += curSamplesValues[i];
-
-                    if (curSamples[i].size() < minSampleLength) {
-                        minSampleLength = int(curSamples[i].size());
-                    }
-
-                    if (int(curSamples[i].size()) > maxSampleLength) {
-                        maxSampleLength = int(curSamples[i].size());
-                    }
-                }
-
-                vector<int> sameIndexes;//相同随机选一个
-                for (int i = 0; i < curSamples.size(); i++) {
-                    if (curSamplesValues[i] == minValue) {
-                        sameIndexes.push_back(i);
-                    }
-                }
-                minIndex = int(createSampleRad() % int(sameIndexes.size()));
-
-                //todo 可以再加1随机
-                int curCreateLength =
-                        minSampleLength + int(createSampleRad() % (maxSampleLength - minSampleLength + 1));
-                vector<vector<int>> tmpSamples;
-                for (int i = 0; i < curSamples.size(); i++) {
-                    if (minIndex != i) {
-                        tmpSamples.push_back(curSamples[i]);
-                    }
-                }
-
-                vector<vector<int>> candidateSamples = myGenerate2(tmpSamples, curCreateLength,
-                                                                   candidateCount, 1);
-
-                if (candidateSamples.empty()) {
-                    continue;
-                }
-                vector<int> bestLengthAndScore = getBestLengthAndScore(tmpSamples, candidateSamples[0]);
-                if (bestLengthAndScore[1] > minValue) {
-                    curSamples[minIndex] = {candidateSamples[0].begin(),
-                                            candidateSamples[0].begin() + bestLengthAndScore[0]};
-                    curSamplesValues[minIndex] = bestLengthAndScore[1];
-                    noBetterCount = 0;
-                } else {
-                    noBetterCount++;
-//                    if (noBetterCount > candidateCount) {
-//                        candidateCount = min(int(edges.size()) - 1, candidateCount + 1);
-//                        noBetterCount = 0;
+//        int noBetterCount = 0;
+//        int iterateCount = 0;
+//        int candidateCount = CREATE_SHUFFLE_CANDIDATE_COUNT;
+//        int totalScore = 0;
+//        while (true) {
+//            iterateCount++;
+//            if (curSamples.size() < CREATE_SAMPLE_COUNT) {
+//
+//                vector<vector<int>> candidateSamples = myGenerate2(curSamples, EVERY_SCENE_MAX_FAIL_EDGE_COUNT,
+//                                                                   CREATE_SHUFFLE_CANDIDATE_COUNT,
+//                                                                   CREATE_SAMPLE_CANDIDATE_COUNT);
+//
+//                if (candidateSamples.empty()) {
+//                    continue;
+//                }
+//
+//                int bestScore = -100000;
+//                vector<int> bestSample;
+//                for (vector<int> &candidateSample: candidateSamples) {
+//                    vector<int> bestLengthAndScore = getBestLengthAndScore(curSamples, candidateSample);
+//                    if (bestLengthAndScore[1] > bestScore) {
+//                        bestScore = bestLengthAndScore[1];
+//                        bestSample = {candidateSample.begin(), candidateSample.begin() + bestLengthAndScore[0]};
 //                    }
-                }
-            }
-            long curTime = runtime();
-            if (curTime > CREATE_SAMPLES_MAX_TIME) {
-                break;
-            }
-            totalScore = 0;
-            for (const auto &item: curSamplesValues) {
-                totalScore += item;
-            }
-            printError("iterateCount:" + to_string(iterateCount) + ",totalScore:" + to_string(totalScore)
-                       + ",noBetterCount:" + to_string(noBetterCount));
-
-
-        }
-        int value = 0;
-        for (int curSamplesValue: curSamplesValues) {
-            value += curSamplesValue;
-        }
-
-        printError("iterateCount:" + to_string(iterateCount) + ",maxValue:" +
-                   to_string(totalBusValue * curSamples.size()) +
-                   ",value:" + to_string(value) + ",noBetterCount:" + to_string(noBetterCount));
+//                }
+//
+//
+//                curSamples.push_back(bestSample);
+//                curSamplesValues.push_back(bestScore);
+//
+//            } else {
+//                int minIndex = 0;
+//                int minValue = curSamplesValues[0];
+//
+//                int minSampleLength = int(curSamples[0].size());
+//                int maxSampleLength = int(curSamples[0].size());
+//                for (int i = 1; i < curSamples.size(); i++) {
+//                    totalScore += curSamplesValues[i];
+//
+//                    if (curSamples[i].size() < minSampleLength) {
+//                        minSampleLength = int(curSamples[i].size());
+//                    }
+//
+//                    if (int(curSamples[i].size()) > maxSampleLength) {
+//                        maxSampleLength = int(curSamples[i].size());
+//                    }
+//                }
+//
+//                vector<int> sameIndexes;//相同随机选一个
+//                for (int i = 0; i < curSamples.size(); i++) {
+//                    if (curSamplesValues[i] == minValue) {
+//                        sameIndexes.push_back(i);
+//                    }
+//                }
+//                minIndex = int(createSampleRad() % int(sameIndexes.size()));
+//
+//                //todo 可以再加1随机
+//                int curCreateLength =
+//                        minSampleLength + int(createSampleRad() % (maxSampleLength - minSampleLength + 1));
+//                vector<vector<int>> tmpSamples;
+//                for (int i = 0; i < curSamples.size(); i++) {
+//                    if (minIndex != i) {
+//                        tmpSamples.push_back(curSamples[i]);
+//                    }
+//                }
+//
+//                vector<vector<int>> candidateSamples = myGenerate2(tmpSamples, curCreateLength,
+//                                                                   candidateCount, 1);
+////                vector<vector<int>> candidateSamples = myGenerate(tmpSamples, curCreateLength,
+////                                                                   candidateCount, 1,0);
+//                if (candidateSamples.empty()) {
+//                    continue;
+//                }
+//                vector<int> bestLengthAndScore = getBestLengthAndScore(tmpSamples, candidateSamples[0]);
+//                if (bestLengthAndScore[1] > minValue) {
+//                    curSamples[minIndex] = {candidateSamples[0].begin(),
+//                                            candidateSamples[0].begin() + bestLengthAndScore[0]};
+//                    curSamplesValues[minIndex] = bestLengthAndScore[1];
+//                    noBetterCount = 0;
+//                } else {
+//                    noBetterCount++;
+////                    if (noBetterCount > candidateCount) {
+////                        candidateCount = min(int(edges.size()) - 1, candidateCount + 1);
+////                        noBetterCount = 0;
+////                    }
+//                }
+//            }
+//            long curTime = runtime();
+//            if (curTime > CREATE_SAMPLES_MAX_TIME) {
+//                break;
+//            }
+//            totalScore = 0;
+//            for (const auto &item: curSamplesValues) {
+//                totalScore += item;
+//            }
+//            printError("iterateCount:" + to_string(iterateCount) + ",totalScore:" + to_string(totalScore)
+//                       + ",noBetterCount:" + to_string(noBetterCount));
+//
+//
+//        }
+//        int value = 0;
+//        for (int curSamplesValue: curSamplesValues) {
+//            value += curSamplesValue;
+//        }
+//
+//        printError("iterateCount:" + to_string(iterateCount) + ",maxValue:" +
+//                   to_string(totalBusValue * curSamples.size()) +
+//                   ",value:" + to_string(value) + ",noBetterCount:" + to_string(noBetterCount));
 
 
         printMeCreateSamples(curSamples);
 // 规划段 本地测试
-        if (LOCAL_TEST_CREATE) {
-            double myScore = 0, baseScore = 0;
-            for (int i = 0; i < 2; i++) {
-                curScore = 0;
-                for (auto &curSample: curSamples) {
-                    vector<vector<Point>> curBusesResult = busesOriginResult;
-                    for (int k = 0; k < curSample.size(); k++) {
-                        int failEdgeId = curSample[k];
-                        int curLength = k + 1;
-                        if (i == 0) {
-                            dispatch(curBusesResult, failEdgeId, int(curSample.size()),
-                                     curLength, false, true, true);
-                        } else {
-                            dispatch(curBusesResult, failEdgeId, EVERY_SCENE_MAX_FAIL_EDGE_COUNT,
-                                     curLength, true, false, true);
-                        }
-                    }
-                    //邻接表
-                    int totalValue = 0;
-                    int remainValue = 0;
-                    for (int k = 1; k < buses.size(); k++) {
-                        totalValue += buses[k].value;
-                        if (!buses[k].die) {
-                            remainValue += buses[k].value;
-                        }
-                    }
-                    curScore += 10000.0 * remainValue / totalValue;
-                    reset();
-                }
-                if (i == 0) {
-                    myScore = curScore;
-                } else {
-                    baseScore = curScore;
-                }
-            }
-            curScore = (myScore - baseScore);
-            printError(
-                    "totalScore:" + to_string(curSamples.size() * 10000) + ",myScore:" +
-                    to_string(myScore).substr(0, to_string(myScore).length() - 3) +
-                    ",baseScore:" + to_string(baseScore).substr(0, to_string(baseScore).length() - 3) +
-                    ",diffScore:" +
-                    to_string(curScore).substr(0, to_string(curScore).length() - 3));
-
-            return;
-        }
+//        if (LOCAL_TEST_CREATE) {
+//            double myScore = 0, baseScore = 0;
+//            for (int i = 0; i < 2; i++) {
+//                curScore = 0;
+//                for (auto &curSample: curSamples) {
+//                    vector<vector<Point>> curBusesResult = busesOriginResult;
+//                    for (int k = 0; k < curSample.size(); k++) {
+//                        int failEdgeId = curSample[k];
+//                        int curLength = k + 1;
+//                        if (i == 0) {
+//                            dispatch(curBusesResult, failEdgeId, int(curSample.size()),
+//                                     curLength, false, true, true);
+//                        } else {
+//                            dispatch(curBusesResult, failEdgeId, EVERY_SCENE_MAX_FAIL_EDGE_COUNT,
+//                                     curLength, true, false, true);
+//                        }
+//                    }
+//                    //邻接表
+//                    int totalValue = 0;
+//                    int remainValue = 0;
+//                    for (int k = 1; k < buses.size(); k++) {
+//                        totalValue += buses[k].value;
+//                        if (!buses[k].die) {
+//                            remainValue += buses[k].value;
+//                        }
+//                    }
+//                    curScore += 10000.0 * remainValue / totalValue;
+//                    reset();
+//                }
+//                if (i == 0) {
+//                    myScore = curScore;
+//                } else {
+//                    baseScore = curScore;
+//                }
+//            }
+//            curScore = (myScore - baseScore);
+//            printError(
+//                    "totalScore:" + to_string(curSamples.size() * 10000) + ",myScore:" +
+//                    to_string(myScore).substr(0, to_string(myScore).length() - 3) +
+//                    ",baseScore:" + to_string(baseScore).substr(0, to_string(baseScore).length() - 3) +
+//                    ",diffScore:" +
+//                    to_string(curScore).substr(0, to_string(curScore).length() - 3));
+//
+//            return;
+//        }
 
         int t;
         scanf("%d", &t);
@@ -1610,22 +1644,32 @@ struct Strategy {
             //邻接表
             vector<vector<Point>> curBusesResult = busesOriginResult;
             int curLength = 0;
-            while (true) {
+            scanf("%d", &curLength);
+            for (int j = 0; j < curLength; ++j) {
                 int failEdgeId = -1;
                 scanf("%d", &failEdgeId);
                 if (failEdgeId == -1) {
                     break;
                 }
-                curLength++;
-//                if (i < curSamples.size()) {
-//                    dispatch(curBusesResult, failEdgeId, int(curSamples[i].size()),
-//                             curLength, false, true, true);
-//                    //自己的不能迭代，效果会差
-//                } else {
                 dispatch(curBusesResult, failEdgeId, EVERY_SCENE_MAX_FAIL_EDGE_COUNT,
                          curLength, true, true, true);
-                // }
             }
+//            while (true) {
+//                int failEdgeId = -1;
+//                scanf("%d", &failEdgeId);
+//                if (failEdgeId == -1) {
+//                    break;
+//                }
+//                curLength++;
+////                if (i < curSamples.size()) {
+////                    dispatch(curBusesResult, failEdgeId, int(curSamples[i].size()),
+////                             curLength, false, true, true);
+////                    //自己的不能迭代，效果会差
+////                } else {
+//                dispatch(curBusesResult, failEdgeId, EVERY_SCENE_MAX_FAIL_EDGE_COUNT,
+//                         curLength, true, true, true);
+//                // }
+//            }
             maxLength = curLength;
             int totalValue = 0;
             int remainValue = 0;
