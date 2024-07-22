@@ -796,8 +796,7 @@ struct Strategy {
         //1.求受影响的业务
         vector<int> affectBusinesses;
 
-        for (int i = CHANNEL_COUNT; i >= 1; --i) {
-            int busId = edges[failEdgeId].channel[i];
+        for (int busId: edges[failEdgeId].channel) {
             if (busId != -1 && !buses[busId].die) {
                 assert(buses[busId].id == busId);
                 if (!affectBusinesses.empty() && affectBusinesses[int(affectBusinesses.size()) - 1]
@@ -831,16 +830,6 @@ struct Strategy {
 //                affectBusinesses.push_back(busId);
 //            }
 //        }
-        sort(affectBusinesses.begin(), affectBusinesses.end(), [&](int aId, int bId) {
-            if (base) {
-
-                return buses[aId].value > buses[bId].value;
-
-
-            } else {
-                return buses[aId].occupyResource > buses[bId].occupyResource;
-            }
-        });
         int affectSize = int(affectBusinesses.size());
 
 
