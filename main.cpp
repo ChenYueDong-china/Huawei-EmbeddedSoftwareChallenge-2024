@@ -808,7 +808,7 @@ struct Strategy {
             }
         }
         if (base) {
-            std::sort(affectBusinesses.begin(), affectBusinesses.end(), [&](int aId, int bId) {
+            sort(affectBusinesses.begin(), affectBusinesses.end(), [&](int aId, int bId) {
                 return aId < bId;
             });
             sort(affectBusinesses.begin(), affectBusinesses.end(), [&](int aId, int bId) {
