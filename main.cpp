@@ -27,6 +27,10 @@ const int CREATE_BASE_SAMPLES_MAX_TIME = 10 * 1000;//留1s阈值
 const int CREATE_OPTIMIZE_SAMPLES_MAX_TIME = CREATE_BASE_SAMPLES_MAX_TIME + 10 * 1000;//留1s阈值
 
 
+const double CREATE_SAMPLE_RESOURCE_FACTOR = 0.5;
+const double SEARCH_RESOURCE_FACTOR = 0.8;
+
+
 //创建常量
 const int CREATE_SAMPLE_COUNT = 30;//创建样例最大个数
 const double CREATE_SAMPLE_SIMILARITY_THRESHOLD = 0.5;//相似度约束
@@ -624,7 +628,7 @@ struct Strategy {
 
     //aStar寻路
     inline vector<Point>
-    aStarFindPath(Business &business, const vector<Point> &originPath, int maxLength, int curLength) {
+    aStarFindPath(Business &business, const vector<Point> &originPath, int maxLength, int curLength, bool test) {
         int from = business.from;
         int to = business.to;
         int width = business.needChannelLength;
@@ -634,7 +638,8 @@ struct Strategy {
         double remainBussValues = 1.0 * remainAliveBusValue * max(min(maxLength, int(edges.size()) - 1)
                                                                   - curLength + 1, 1) / (remainEdgesSize + 1);
         //按照价值分资源
-        int extraResource = (int) round(0.8 * business.value * remainResource / remainBussValues);
+        double factor = test ? CREATE_SAMPLE_RESOURCE_FACTOR : SEARCH_RESOURCE_FACTOR;
+        int extraResource = (int) round(factor * business.value * remainResource / remainBussValues);
         if (maxLength == curLength) {
             extraResource = INT_INF / 2;
         }
@@ -755,7 +760,7 @@ struct Strategy {
             if (base) {
                 path = baseLineFindPath(business);
             } else {
-                path = aStarFindPath(business, curBusesResult[business.id], maxLength, curLength);
+                path = aStarFindPath(business, curBusesResult[business.id], maxLength, curLength, test);
             }
             if (!path.empty()) {
                 //变通道次数得减回去
@@ -1026,7 +1031,8 @@ struct Strategy {
                 const vector<Point> &originPath = busesOriginResult[id];
                 Business &business = buses[id];
                 vector<Point> baseFindPath = baseLineFindPath(business);
-                vector<Point> meFindPath = aStarFindPath(business, originPath, EVERY_SCENE_MAX_FAIL_EDGE_COUNT, 0);
+                vector<Point> meFindPath = aStarFindPath(business, originPath, EVERY_SCENE_MAX_FAIL_EDGE_COUNT, 0,
+                                                         true);
 
                 if (!baseFindPath.empty()) {
                     baseValue += buses[id].value;
