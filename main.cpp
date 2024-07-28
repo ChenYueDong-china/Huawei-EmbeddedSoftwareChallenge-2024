@@ -219,8 +219,8 @@ struct Strategy {
 
 
         inline static vector<Point> aStar(int start, int end, int width, const vector<NearEdge> searchGraph[MAX_N + 1],
-                                           const vector<Edge> &edges, const vector<Vertex> &vertices,
-                                           int minDistance[MAX_N + 1][MAX_N + 1], int maxResource) {
+                                          const vector<Edge> &edges, const vector<Vertex> &vertices,
+                                          int minDistance[MAX_N + 1][MAX_N + 1], int maxResource) {
 
             static bitset<MAX_N + 1> parentVertexes[CHANNEL_COUNT + 1][MAX_N + 1];
             static int timestamp[CHANNEL_COUNT + 1][MAX_N + 1], dist[CHANNEL_COUNT + 1][MAX_N + 1]
@@ -536,8 +536,8 @@ struct Strategy {
 
         int l1 = runtime();
         vector<Point> path = SearchUtils::aStar(from, to, width,
-                                                 searchGraph, edges, vertices, minDistance,
-                                                 originResource + extraResource);
+                                                searchGraph, edges, vertices, minDistance,
+                                                originResource + extraResource);
         int r1 = runtime();
         searchTime += r1 - l1;
         redoBusiness(business, originPath, {});
@@ -560,13 +560,13 @@ struct Strategy {
 
     //把全部增加上的新路径回收掉
     void undoResult(const unordered_map<int, vector<Point>> &result, const vector<vector<Point>> &curBusesResult,
-                    int tmpRemainResource, bool test) {
+                    int tmpRemainResource, bool onlyOne) {
         for (const auto &entry: result) {
             int id = entry.first;
             const vector<Point> &newPath = entry.second;
             Business &business = buses[id];
             const vector<Point> &originPath = curBusesResult[business.id];
-            if (!test) {
+            if (!onlyOne) {
                 undoBusiness(business, newPath, originPath);
             }
         }
@@ -575,14 +575,14 @@ struct Strategy {
 
     //把全部需要增加上的新路径增加进去，并且回收老路径
     void redoResult(vector<int> &affectBusinesses, unordered_map<int, vector<Point>> &result,
-                    vector<vector<Point>> &curBusesResult, bool test) {
+                    vector<vector<Point>> &curBusesResult, bool onlyOne) {
         for (const auto &entry: result) {
             int id = entry.first;
             const vector<Point> &newPath = entry.second;
             const vector<Point> &originPath = curBusesResult[id];
             const Business &business = buses[id];
             //先加入新路径
-            if (!test) {
+            if (!onlyOne) {
                 redoBusiness(business, newPath, originPath);
             }
             //未错误，误报
@@ -749,7 +749,7 @@ struct Strategy {
             }
 
             //3.重排,穷举
-            undoResult(satisfyBusesResult, curBusesResult, tmpRemainResource, test);//回收结果，下次迭代
+            undoResult(satisfyBusesResult, curBusesResult, tmpRemainResource, !IS_ONLINE || test);//回收结果，下次迭代
             iteration++;
             int r1 = runtime();
 
@@ -765,7 +765,7 @@ struct Strategy {
             }
             //printError("iteration:" + to_string(iteration) + ",curHandleCount:" + to_string(curHandleCount));
         }
-        redoResult(affectBusinesses, bestResult, curBusesResult, test);
+        redoResult(affectBusinesses, bestResult, curBusesResult, !IS_ONLINE || test);
         if (shouldPrintf) {
             printResult(bestResult);
         }
