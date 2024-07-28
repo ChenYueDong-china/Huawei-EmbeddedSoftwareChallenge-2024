@@ -1522,7 +1522,7 @@ struct Strategy {
 
 int main() {
     //    SetConsoleOutputCP ( CP_UTF8 ) ;
-//todo 1.生成逻辑可能存在问题
+//todo 1.生成逻辑可能存在问题,2.可能有bug，再研究研究
     static Strategy strategy;
     if (fopen("../data/0/in.txt", "r") != nullptr) {
         string path = "../data/";
