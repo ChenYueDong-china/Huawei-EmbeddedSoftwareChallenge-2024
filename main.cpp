@@ -1,5 +1,5 @@
 /*
- * Description: SimpleDemo，主要思路是不断随机迭代搜索+选择性拯救业务获得最优解
+ * Description: 十分简单的一种解法，主要思路是随机生成穷举最大分差，然后按照剩余资源寻找最短路径
  * Date: 2024-05-18
  */
 #include <iostream>
