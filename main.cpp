@@ -143,7 +143,7 @@ struct Strategy {
     };
     vector<vector<Point>> busesOriginResult;//邻接表
     int minDistance[MAX_N + 1][MAX_N + 1]{};//邻接表
-    unsigned long long searchTime = 0;
+    int searchTime = 0;
     int curHandleCount = 0;
     double resultScore[2]{};
     int totalResource = 0;//初始状态剩余的资源
@@ -155,6 +155,68 @@ struct Strategy {
     vector<vector<int>> baseOriginValue[MAX_M + 1];//断掉应该增加的分
 
     struct SearchUtils {
+
+        //baseLine寻路
+        inline static vector<Point>
+        baseFind(int start, int end, int width, const vector<NearEdge> searchGraph[MAX_N + 1],
+                 const vector<Edge> &edges) {
+            struct Common {
+                int timestamp;
+                int parentEdgeId;
+            };
+            static Common common[CHANNEL_COUNT + 1][MAX_N + 1];
+            static int timestampId = 1;//距离
+            timestampId++;
+            int endChannel = -1;
+            queue<int> q;
+            for (int i = 1; i <= CHANNEL_COUNT; ++i) {
+                common[i][start].timestamp = timestampId;
+                q.emplace((i << 16) + start);
+            }
+            while (!q.empty()) {
+                const int poll = q.front();
+                q.pop();
+                const int lastChannel = poll >> 16;
+                const int lastVertex = poll & 0xFFFF;
+                if (lastVertex == end) {
+                    endChannel = lastChannel;
+                    break;
+                }
+                for (const NearEdge &nearEdge: searchGraph[lastVertex]) {
+                    const int next = nearEdge.to;
+                    const Edge &edge = edges[nearEdge.id];
+                    if (edge.die) {
+                        continue;
+                    }
+                    //没法变通道
+                    if (!edge.widthChannelTable[width * (CHANNEL_COUNT + 1) + lastChannel]) {
+                        continue;//不空闲直接结束
+                    }
+                    const int startChannel = lastChannel;
+                    if (common[startChannel][next].timestamp == timestampId) {
+                        //访问过了，且距离没变得更近
+                        continue;
+                    }
+                    common[startChannel][next].timestamp = timestampId;
+                    common[startChannel][next].parentEdgeId = nearEdge.id;
+                    q.emplace((startChannel << 16) + next);
+                }
+            }
+            if (endChannel == -1) {
+                return {};
+            }
+            vector<Point> path;
+            int cur = end;
+            int curStartChannel = endChannel;
+            while (cur != start) {
+                int edgeId = common[endChannel][cur].parentEdgeId;
+                path.push_back({edgeId, curStartChannel, curStartChannel + width - 1});
+                cur = edges[edgeId].from == cur ? edges[edgeId].to : edges[edgeId].from;
+            }
+            reverse(path.begin(), path.end());
+            return path;
+        }
+
 
         inline static vector<Point> aStar(int start, int end, int width, const vector<NearEdge> searchGraph[MAX_N + 1],
                                            const vector<Edge> &edges, const vector<Vertex> &vertices,
@@ -288,141 +350,6 @@ struct Strategy {
             return path;
         }
 
-
-        //baseLine寻路
-        inline static vector<Point>
-        baseFind(int start, int end, int width, const vector<NearEdge> searchGraph[MAX_N + 1],
-                 const vector<Edge> &edges) {
-            struct Common {
-                int timestamp;
-                int parentEdgeId;
-            };
-            static Common common[CHANNEL_COUNT + 1][MAX_N + 1];
-            static int timestampId = 1;//距离
-            timestampId++;
-            int endChannel = -1;
-            queue<int> q;
-//            priority_queue<int> q;
-            for (int i = 1; i <= CHANNEL_COUNT; ++i) {
-                common[i][start].timestamp = timestampId;
-                q.emplace((i << 16) + start);
-            }
-            while (!q.empty()) {
-                const int poll = q.front();
-                q.pop();
-                const int lastChannel = poll >> 16;
-                const int lastVertex = poll & 0xFFFF;
-                if (lastVertex == end) {
-                    endChannel = lastChannel;
-                    break;
-                }
-                for (const NearEdge &nearEdge: searchGraph[lastVertex]) {
-                    const int next = nearEdge.to;
-                    const Edge &edge = edges[nearEdge.id];
-                    if (edge.die) {
-                        continue;
-                    }
-
-                    //没法变通道
-                    if (!edge.widthChannelTable[width * (CHANNEL_COUNT + 1) + lastChannel]) {
-                        continue;//不空闲直接结束
-                    }
-                    const int startChannel = lastChannel;
-                    if (common[startChannel][next].timestamp == timestampId) {
-                        //访问过了，且距离没变得更近
-                        continue;
-                    }
-                    common[startChannel][next].timestamp = timestampId;
-                    common[startChannel][next].parentEdgeId = nearEdge.id;
-                    q.emplace((startChannel << 16) + next);
-                }
-            }
-            if (endChannel == -1) {
-                return {};
-            }
-            vector<Point> path;
-            int cur = end;
-            int curStartChannel = endChannel;
-            while (cur != start) {
-                int edgeId = common[endChannel][cur].parentEdgeId;
-                path.push_back({edgeId, curStartChannel, curStartChannel + width - 1});
-                cur = edges[edgeId].from == cur ? edges[edgeId].to : edges[edgeId].from;
-            }
-            reverse(path.begin(), path.end());
-
-            return path;
-        }
-
-        //baseLine寻路
-        inline static vector<Point>
-        baseFind2(int start, int end, int width, const vector<NearEdge> searchGraph[MAX_N + 1],
-                  const vector<Edge> &edges) {
-            struct Common {
-                int timestamp;
-                int parentEdgeId;
-            };
-            static Common common[MAX_N + 1];
-            static int timestampId = 1;//距离
-            int endChannel = -1;
-            queue<int> q;
-            for (int i = 1; i <= CHANNEL_COUNT; ++i) {
-                //按照宽度排序，基本一致
-                timestampId++;
-                common[start].timestamp = timestampId;
-                q.push(start);
-                while (!q.empty()) {
-                    int size = int(q.size());
-                    for (int j = 0; j < size; j++) {
-                        int poll = q.front();
-                        q.pop();
-                        int lastVertex = poll;
-                        if (lastVertex == end) {
-                            endChannel = i;
-                            break;
-                        }
-                        for (const NearEdge &nearEdge: searchGraph[lastVertex]) {
-                            const int next = nearEdge.to;
-                            const Edge &edge = edges[nearEdge.id];
-                            if (edge.die) {
-                                continue;
-                            }
-                            //没法变通道
-                            if (!edge.widthChannelTable[width * (CHANNEL_COUNT + 1) + i]) {
-                                continue;//不空闲直接结束
-                            }
-                            if (common[next].timestamp == timestampId) {
-                                //访问过了，且距离没变得更近
-                                continue;
-                            }
-                            common[next].timestamp = timestampId;
-                            common[next].parentEdgeId = nearEdge.id;
-                            q.push(next);
-                        }
-                    }
-                    if (endChannel != -1) {
-                        break;
-                    }
-                }
-                if (endChannel != -1) {
-                    break;
-                }
-            }
-
-            if (endChannel == -1) {
-                return {};
-            }
-            vector<Point> path;
-            int cur = end;
-            int curStartChannel = endChannel;
-            while (cur != start) {
-                int edgeId = common[cur].parentEdgeId;
-                path.push_back({edgeId, curStartChannel, curStartChannel + width - 1});
-                cur = edges[edgeId].from == cur ? edges[edgeId].to : edges[edgeId].from;
-            }
-            reverse(path.begin(), path.end());
-
-            return path;
-        }
 
     };
 
@@ -1056,57 +983,7 @@ struct Strategy {
         return result;
     }
 
-
     vector<int> getBestLengthAndScore(vector<vector<int>> &otherSamples, vector<int> &sample) {
-        //最好的长度，以及分差;
-        int ourScore[sample.size()];
-        int baseScore[sample.size()];
-
-        int totalValue = 0;
-        for (int i = 1; i < buses.size(); ++i) {
-            totalValue += buses[i].value;
-        }
-        for (int i = 0; i < 2; i++) {
-            vector<vector<Point>> curBusesResult = busesOriginResult;
-            int remainValue = totalValue;
-            for (int j = 0; j < sample.size(); j++) {
-                int failEdgeId = sample[j];
-                vector<int> beforeIds = getAllUnDieBusinessId(failEdgeId);
-                dispatch(curBusesResult, failEdgeId, int(sample.size()), j + 1,
-                         i != 0, true, false);
-                for (int beforeId: beforeIds) {
-                    if (buses[beforeId].die) {
-                        remainValue -= buses[beforeId].value;
-                    }
-                }
-                if (i == 0) {
-                    ourScore[j] = remainValue;
-                } else {
-                    baseScore[j] = remainValue;
-                }
-            }
-            reset();
-        }
-
-        //找到分差最大的长度返回
-        vector<int> tmp = sample;
-        int maxValue = -100000000;
-        int bestLength = -1;
-        for (int i = int(sample.size()) - 1; i >= 0; i--) {
-            int diff = ourScore[i] - baseScore[i];
-            if (diff > maxValue && checkSatisfiedSamplesSimilarity(otherSamples, tmp)) {
-                maxValue = diff;
-                bestLength = i;
-            }
-            tmp.pop_back();
-        }
-        vector<int> result;
-        result.push_back(bestLength + 1);
-        result.push_back(maxValue);
-        return result;
-    }
-
-    vector<int> getBestLengthAndScore2(vector<vector<int>> &otherSamples, vector<int> &sample) {
         //最好的长度，以及分差;
         int ourScore[sample.size()];
         int baseScore[sample.size()];
@@ -1183,7 +1060,6 @@ struct Strategy {
                 bestMaxLength = bestLength + 1;
             }
         }
-
         vector<int> result;
         result.push_back(bestLength + 1);
         result.push_back(maxValue);
@@ -1338,7 +1214,7 @@ struct Strategy {
         vector<int> result;
         for (int i = 0; i < candidateSamples.size(); i++) {
             vector<int> &candidateSample = candidateSamples[i];
-            vector<int> bestLengthAndScore = getBestLengthAndScore2(beforeSamples, candidateSample);
+            vector<int> bestLengthAndScore = getBestLengthAndScore(beforeSamples, candidateSample);
             if (bestLengthAndScore[1] > bestScore) {
                 bestIndex = i;
                 bestLength = bestLengthAndScore[0];
