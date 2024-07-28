@@ -23,11 +23,11 @@ const bool LOCAL_TEST_CREATE = true;//线上改为false
 const int CREATE_SAMPLE_RANDOM_SEED = 666;//创建样例种子
 const int CREATE_BASE_SAMPLE_CANDIDATE_COUNT = 3;//候选序列
 const int CREATE_OPTIMIZE_SAMPLE_CANDIDATE_COUNT = 5;//候选序列
-const int CREATE_BASE_SHUFFLE_CANDIDATE_COUNT = 15;//大于0号策略时，每一次随机从20个中选一个
-const int CREATE_OPTIMIZE_SHUFFLE_CANDIDATE_COUNT = 20;//大于0号策略时，每一次随机从20个中选一个
+const int CREATE_BASE_EDGE_CANDIDATE_COUNT = 15;//大于0号策略时，每一次随机从20个中选一个
+const int CREATE_OPTIMIZE_EDGE_CANDIDATE_COUNT = 20;//大于0号策略时，每一次随机从20个中选一个
 const int CREATE_SHUFFLE_MAX_TRY_COUNT = 5;//不满足相似度约束时，最多尝试几次？
-const int CREATE_BASE_SAMPLES_MAX_TIME = 30 * 1000;//留1s阈值
-const int CREATE_OPTIMIZE_SAMPLES_MAX_TIME = CREATE_BASE_SAMPLES_MAX_TIME + 10 * 1000;//留1s阈值
+const int CREATE_BASE_SAMPLES_MAX_TIME = 10 * 1000;//留1s阈值
+const int CREATE_OPTIMIZE_SAMPLES_MAX_TIME = CREATE_BASE_SAMPLES_MAX_TIME + 20 * 1000;//留1s阈值
 
 
 const double MY_SAMPLE_SEARCH_RESOURCE_FACTOR = 1.0;
@@ -1777,8 +1777,8 @@ struct Strategy {
     }
 
     vector<vector<int>>
-    myGenerate2(vector<vector<int>> &beforeSample, int generateInitLength
-                , int candidateEdgeSize, const int sampleReturnCount) {
+    myGenerate2(vector<vector<int>> &beforeSample, int generateInitLength, int candidateEdgeSize,
+                const int sampleReturnCount) {
         bool beSelect[edges.size()];
         vector<vector<int>> samples;
         int scores[edges.size()];
@@ -2012,10 +2012,10 @@ struct Strategy {
             int curCreateLength = minSampleLength + int(createSampleRad() % (maxSampleLength -
                                                                              minSampleLength + 2));
             int noBetterCount = 0;
-            while (noBetterCount < CREATE_SAMPLE_COUNT * CREATE_OPTIMIZE_SAMPLE_CANDIDATE_COUNT) {
+            while (noBetterCount < 2 * CREATE_SAMPLE_COUNT * CREATE_OPTIMIZE_SAMPLE_CANDIDATE_COUNT) {
                 vector<vector<int>> candidateSamples = myGenerate2(tmpSamples,
                                                                    curCreateLength,
-                                                                   CREATE_OPTIMIZE_SHUFFLE_CANDIDATE_COUNT,
+                                                                   CREATE_OPTIMIZE_EDGE_CANDIDATE_COUNT,
                                                                    1);
                 if (candidateSamples.empty()) {
                     continue;
@@ -2068,9 +2068,8 @@ struct Strategy {
                 curResults.pop_back();
             }
 
-            createBaseSamples(curResults, CREATE_OPTIMIZE_SAMPLE_CANDIDATE_COUNT
-                              , CREATE_OPTIMIZE_SAMPLES_MAX_TIME,
-                              CREATE_OPTIMIZE_SHUFFLE_CANDIDATE_COUNT, initLength);
+            createBaseSamples(curResults, CREATE_OPTIMIZE_SAMPLE_CANDIDATE_COUNT, CREATE_OPTIMIZE_SAMPLES_MAX_TIME,
+                              CREATE_OPTIMIZE_EDGE_CANDIDATE_COUNT, initLength);
             if (curResults.size() < bestResult.size()) {
                 //超时结束了
                 break;
@@ -2096,7 +2095,7 @@ struct Strategy {
         //1.选定最好生成策略
         vector<SampleResult> results;
         createBaseSamples(results, CREATE_BASE_SAMPLE_CANDIDATE_COUNT, CREATE_BASE_SAMPLES_MAX_TIME,
-                          CREATE_BASE_SHUFFLE_CANDIDATE_COUNT, EVERY_SCENE_MAX_FAIL_EDGE_COUNT);
+                          CREATE_BASE_EDGE_CANDIDATE_COUNT, EVERY_SCENE_MAX_FAIL_EDGE_COUNT);
         optimizeSamples(results);
         vector<vector<int>> curSamples;
         int shouldValue = 0;
