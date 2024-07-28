@@ -42,9 +42,7 @@ const int EVERY_SCENE_MAX_FAIL_EDGE_COUNT = 60;//一个场景场景最大断边�
 
 //迭代参数
 const int SEARCH_RANDOM_SEED = 666;//搜索种子
-const int MIN_ITERATION_COUNT = 1;//留1s阈值,他的样例的迭代次数，我们自己的不迭代，防止效果变差
 static bool IS_ONLINE = false;//使劲迭代人家的，留1s阈值
-const int SMALL_CHANNEL_WEIGHT = 1;//窄通道权重
 int CHANGE_CHANNEL_WEIGHT = 300;//变通道权重
 const int EDGE_LENGTH_WEIGHT = 100;//边的权重
 
@@ -81,7 +79,6 @@ struct Edge {
     int channel[CHANNEL_COUNT + 1]{};//0号不用
     int freeChannelTable[CHANNEL_COUNT + 1][CHANNEL_COUNT + 1]{};//打表加快搜索速度
     bitset<(CHANNEL_COUNT + 1) * (CHANNEL_COUNT + 1)> widthChannelTable;//指示某个宽度某条通道是否被占用
-    int channelData[CHANNEL_COUNT + 1][3]{};//通道宽度，通道起始点，通道结束点
     Edge() {
         memset(channel, -1, sizeof(channel));
     }
@@ -700,7 +697,6 @@ struct Strategy {
         int freeLength = 0;
         int l1 = runtime();
         edge.widthChannelTable.reset();
-        // memset(edge.channelData, 0, sizeof edge.channelData);
         for (int i = 1; i <= CHANNEL_COUNT; i++) {
             edge.freeChannelTable[i][0] = 0;//长度重新置为0
         }
@@ -719,9 +715,6 @@ struct Strategy {
                     int start = i - j + 1;
                     freeChannelTable[j][++freeChannelTable[j][0]] = start;
                     edge.widthChannelTable.set(j * (CHANNEL_COUNT + 1) + start);
-//                    edge.channelData[start][0] = freeLength;
-//                    edge.channelData[start][1] = i - freeLength + 1;
-//                    edge.channelData[start][2] = i;
                 }
             }
         }
@@ -817,7 +810,7 @@ struct Strategy {
 
 
         int l1 = runtime();
-        vector<Point> path = SearchUtils::aStar1(from, to, width,
+        vector<Point> path = SearchUtils::aStar2(from, to, width,
                                                  searchGraph, edges, vertices, minDistance,
                                                  originResource + extraResource);
         int r1 = runtime();
