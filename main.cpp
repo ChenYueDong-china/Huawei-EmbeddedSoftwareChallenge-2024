@@ -145,13 +145,9 @@ struct Strategy {
     int minDistance[MAX_N + 1][MAX_N + 1]{};//邻接表
     unsigned long long searchTime = 0;
     int curHandleCount = 0;
-    double resultScore[2];
+    double resultScore[2]{};
     int totalResource = 0;//初始状态剩余的资源
-    int totalBusValue = 0;//初始状态剩余的资源
     int remainResource = 0;//初始状态剩余的资源
-    int remainAliveBusCount = 0;//初始状态剩余的资源
-    int remainAliveBusValue = 0;//初始状态剩余的资源
-    int remainEdgesSize = 0;//初始状态剩余的资源
     double avgEdgeAffectValue = 0;//平均断一条边影响的价值
     int createScores[MAX_M + 1]{};//基础分
     vector<vector<int>> baseRepValue[MAX_M + 1];//断掉应该增加的分
@@ -648,14 +644,10 @@ struct Strategy {
 
         //计算业务占据的资源
         remainResource = totalResource;
-        remainAliveBusValue = 0;
         for (int i = 1; i < buses.size(); i++) {
             Business &bus = buses[i];
-            remainAliveBusValue += bus.value;
             remainResource -= calculatesResource(busesOriginResult[bus.id]);
         }
-        remainAliveBusCount = int(buses.size()) - 1;
-        remainEdgesSize = int(edges.size()) - 1;
     }
 
     //获得路径经过的变通道顶点
@@ -788,16 +780,8 @@ struct Strategy {
         int originResource = calculatesResource(originPath);
         undoBusiness(business, originPath, {});
 
-        // 方式1.剩余影响的价值
-//        double remainNeedHelpValue = 1.0 * remainAliveBusValue * max(min(int(maxLength, edges.size()) - 1)
-//                                                                     - curLength + 1, 1) / (remainEdgesSize + 1);
-//        double factor = test ? MY_SAMPLE_SEARCH_RESOURCE_FACTOR : OTHER_SAMPLE_SEARCH_RESOURCE_FACTOR;
-//        int extraResource = (int) round(factor * business.value * remainResource / remainNeedHelpValue);
-//        if (maxLength == curLength) {
-//            extraResource  = INT_INF/2;
-//        }
 
-        //方式二,求出剩余需要救的价值
+        //方式1,求出剩余需要救的价值
         double remainNeedHelpValue = avgEdgeAffectValue * max(min(maxLength, int(edges.size()) - 1) - curLength + 1, 1);
         double factor = test ? MY_SAMPLE_SEARCH_RESOURCE_FACTOR : OTHER_SAMPLE_SEARCH_RESOURCE_FACTOR;
         int extraResource = (int) round(factor * (1.0 * business.value / remainNeedHelpValue) * remainResource);
@@ -805,12 +789,12 @@ struct Strategy {
             extraResource = INT_INF / 2;
         }
 
-        //方式三
+        //方式2
         //int extraResource = (int) round(max(EDGE_LENGTH_WEIGHT * business.needChannelLength * 6.0, originResource * 1.6));
 
 
         int l1 = runtime();
-        vector<Point> path = SearchUtils::aStar2(from, to, width,
+        vector<Point> path = SearchUtils::aStar1(from, to, width,
                                                  searchGraph, edges, vertices, minDistance,
                                                  originResource + extraResource);
         int r1 = runtime();
@@ -872,8 +856,6 @@ struct Strategy {
             Business &business = buses[id];
             if (!result.count(business.id)) {
                 business.die = true;//死掉了，以后不调度
-                remainAliveBusValue -= business.value;
-                remainAliveBusCount -= 1;
             }
         }
     }
@@ -951,7 +933,6 @@ struct Strategy {
         if (!test) {
             curHandleCount++;
         }
-        remainEdgesSize--;
         for (auto i = searchGraph[edges[failEdgeId].from].begin(); i < searchGraph[edges[failEdgeId].from].end(); ++i) {
             if (i->id == failEdgeId) {
                 searchGraph[edges[failEdgeId].from].erase(i);
@@ -1162,12 +1143,8 @@ struct Strategy {
         remainResource = totalResource;
         for (int i = 1; i < buses.size(); i++) {
             Business &bus = buses[i];
-            remainAliveBusValue += bus.value;
-            totalBusValue += bus.value;
             remainResource -= calculatesResource(busesOriginResult[bus.id]);
         }
-        remainAliveBusCount = int(buses.size());
-        remainEdgesSize = int(edges.size()) - 1;
         int totalEdgeValue = 0;
         for (int i = 1; i < edges.size(); i++) {
             for (int j = 1; j <= CHANNEL_COUNT; j++) {
