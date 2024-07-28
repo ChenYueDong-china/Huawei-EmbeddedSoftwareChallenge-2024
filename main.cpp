@@ -1964,7 +1964,7 @@ struct Strategy {
                     bestLength = curLength;
                 }
                 iterateCount++;
-                long r1 = runtime();
+                int r1 = runtime();
                 repeat = iterateCount < candidateSampleCount &&
                          oneMaxRunTime - (runtime() - startTime) - (r1 - l1) > 0;
             }
@@ -1975,7 +1975,6 @@ struct Strategy {
             for (const SampleResult &result: results) {
                 totalValue += result.value;
             }
-            long r1 = runtime();
             printError("curSize:" + to_string(curSamples.size()) + ",candidateSampleCount:"
                        + to_string(candidateSampleCount) + ",realIterateCount:" + to_string(iterateCount)
                        + ",totalValue:"
@@ -1984,7 +1983,7 @@ struct Strategy {
         sort(results.begin(), results.end());
     }
 
-    int optimizeSamples(vector<SampleResult> &results, int deep) {
+    int optimizeSamples(vector<SampleResult> &results) {
         //优化
         while (true) {
             int minIndex = 0;
@@ -2069,13 +2068,14 @@ struct Strategy {
                 curResults.pop_back();
             }
 
-            createBaseSamples(curResults, CREATE_OPTIMIZE_SAMPLE_CANDIDATE_COUNT, CREATE_OPTIMIZE_SAMPLES_MAX_TIME,
+            createBaseSamples(curResults, CREATE_OPTIMIZE_SAMPLE_CANDIDATE_COUNT
+                              , CREATE_OPTIMIZE_SAMPLES_MAX_TIME,
                               CREATE_OPTIMIZE_SHUFFLE_CANDIDATE_COUNT, initLength);
             if (curResults.size() < bestResult.size()) {
                 //超时结束了
                 break;
             }
-            int newValue = optimizeSamples(curResults, deep + 1);
+            int newValue = optimizeSamples(curResults);
             if (newValue > bestValue) {
                 bestResult = curResults;
                 bestValue = newValue;
@@ -2097,7 +2097,7 @@ struct Strategy {
         vector<SampleResult> results;
         createBaseSamples(results, CREATE_BASE_SAMPLE_CANDIDATE_COUNT, CREATE_BASE_SAMPLES_MAX_TIME,
                           CREATE_BASE_SHUFFLE_CANDIDATE_COUNT, EVERY_SCENE_MAX_FAIL_EDGE_COUNT);
-        optimizeSamples(results, 0);
+        optimizeSamples(results);
         vector<vector<int>> curSamples;
         int shouldValue = 0;
         for (const SampleResult &result: results) {
