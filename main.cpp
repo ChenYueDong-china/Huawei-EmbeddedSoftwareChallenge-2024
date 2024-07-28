@@ -150,8 +150,7 @@ struct Strategy {
     int minDistance[MAX_N + 1][MAX_N + 1]{};//邻接表
     unsigned long long searchTime = 0;
     int curHandleCount = 0;
-    double maxScore{};
-    double curScore{};
+    double resultScore[2];
     int totalResource = 0;//初始状态剩余的资源
     int totalBusValue = 0;//初始状态剩余的资源
     int remainResource = 0;//初始状态剩余的资源
@@ -1778,12 +1777,13 @@ struct Strategy {
     }
 
     vector<vector<int>>
-    myGenerate2(vector<vector<int>> &beforeSample, int initLength, int candidateSize, const int returnCount) {
+    myGenerate2(vector<vector<int>> &beforeSample, int generateInitLength
+                , int candidateEdgeSize, const int sampleReturnCount) {
         bool beSelect[edges.size()];
         vector<vector<int>> samples;
         int scores[edges.size()];
-        initLength = min(int(edges.size()) - 1, initLength);
-        candidateSize = min(int(edges.size()) - 1, candidateSize);
+        generateInitLength = min(int(edges.size()) - 1, generateInitLength);
+        candidateEdgeSize = min(int(edges.size()) - 1, candidateEdgeSize);
         struct EdgeIdScore {
             int id;
             int score;
@@ -1794,17 +1794,17 @@ struct Strategy {
         };
 
         int tryCount = 0;
-        while (samples.size() < returnCount) {
+        while (samples.size() < sampleReturnCount) {
             memset(beSelect, false, sizeof beSelect);
             memcpy(scores, createScores, sizeof scores);
             vector<int> sample;
-            for (int i = 0; i < initLength; i++) {
+            for (int i = 0; i < generateInitLength; i++) {
                 priority_queue<EdgeIdScore> minScoreQ;
                 for (int j = 1; j < edges.size(); j++) {
                     if (beSelect[j]) {
                         continue;
                     }
-                    if (minScoreQ.size() < candidateSize) {
+                    if (minScoreQ.size() < candidateEdgeSize) {
                         minScoreQ.push({j, scores[j]});
                         continue;
                     }
@@ -1815,7 +1815,7 @@ struct Strategy {
                     }
                 }
                 //随机选择一个边断掉
-                int index = int(createSampleRad() % candidateSize);
+                int index = int(createSampleRad() % candidateEdgeSize);
                 int id = -1;
                 for (int j = 0; j <= index; j++) {
                     if (minScoreQ.empty()) {
@@ -1878,11 +1878,11 @@ struct Strategy {
             } else {
                 tryCount++;
                 if (tryCount > CREATE_SHUFFLE_MAX_TRY_COUNT) {
-                    if (initLength == 1) {
+                    if (generateInitLength == 1) {
                         break;
                     }
                     tryCount = 0;
-                    initLength = max(1, (int) (initLength * 0.8));
+                    generateInitLength = max(1, (int) (generateInitLength * 0.8));
                 }
             }
         }
@@ -1923,8 +1923,9 @@ struct Strategy {
     }
 
     void
-    createBaseSamples(vector<SampleResult> &results, const int maxCreateCount, const int maxRunTime, int candidateCount,
-                      int initLength) {
+    createBaseSamples(vector<SampleResult> &results, const int candidateSampleCount, const int maxRunTime,
+                      int candidateEdgeCount,
+                      int generateInitLength) {
         if (results.size() >= CREATE_SAMPLE_COUNT) {
             return;
         }
@@ -1933,45 +1934,41 @@ struct Strategy {
         for (const SampleResult &result: results) {
             curSamples.push_back(result.sample);
         }
-        candidateCount = min(candidateCount, int(edges.size()) - 1);
-        initLength = min(initLength, int(edges.size()) - 1);
-        if (everySampleRunTime == 0) {
-            long l1 = runtime();
-            vector<vector<int>> candidateSamples = myGenerate2(curSamples, initLength, candidateCount, 1);
-            getBestSample(curSamples, candidateSamples);
-            long r1 = runtime();
-            //java除4
-            everySampleRunTime = max(1, (int) (r1 - l1));
-        }
+        candidateEdgeCount = min(candidateEdgeCount, int(edges.size()) - 1);
+        generateInitLength = min(generateInitLength, int(edges.size()) - 1);
 
+        int oneMaxRunTime = (int) (maxRunTime - runtime()) / (CREATE_SAMPLE_COUNT - int(results.size()));
         while (results.size() < CREATE_SAMPLE_COUNT) {
-            int remainTime = (int) (maxRunTime - runtime());
-            //int createCount = CREATE_SAMPLE_CANDIDATE_COUNT;
-            double factor = 1.0;
-            if (results.size() * 5 < CREATE_SAMPLE_COUNT) {
-                factor += 1.0 * (CREATE_SAMPLE_COUNT - int(results.size()) * 5) / CREATE_SAMPLE_COUNT;
-            }
-            int createCount = min(maxCreateCount,
-                                  (int) ceil(factor * remainTime / (everySampleRunTime * (CREATE_SAMPLE_COUNT
-                                                                                          - int(results.size())
-                                                                                          + 2))));
-            //至少留2次给优化
-            if (createCount <= 0) {
+            if (runtime() > maxRunTime) {
                 break;
             }
-            long l1 = runtime();
-            vector<vector<int>> candidateSamples = myGenerate2(curSamples, initLength, candidateCount,
-                                                               createCount);
-            if (candidateSamples.size() < createCount) {
-                //增大候选，产生更多随机
-                candidateCount = min((int) (candidateCount * 1.5), int(edges.size()) - 1);
+            int iterateCount = 0;
+            vector<int> bestSample;
+            int bestScore = -1;
+            int bestLength = -1;
+            int startTime = runtime();
+            bool repeat = false;
+            while (iterateCount == 0 || repeat) {
+                int l1 = runtime();
+                vector<vector<int>> candidateSamples = myGenerate2(curSamples, generateInitLength, candidateEdgeCount,
+                                                                   1);
+                vector<int> bestSampleIndex = getBestSample(curSamples, candidateSamples);
+                vector<int> curSample = {candidateSamples[bestSampleIndex[0]].begin(),
+                                         candidateSamples[bestSampleIndex[0]].begin() +
+                                         bestSampleIndex[1]};
+                int curScore = bestSampleIndex[2];
+                int curLength = bestSampleIndex[3];
+                if (curScore > bestScore) {
+                    bestSample = curSample;
+                    bestScore = curScore;
+                    bestLength = curLength;
+                }
+                iterateCount++;
+                long r1 = runtime();
+                repeat = iterateCount < candidateSampleCount &&
+                         oneMaxRunTime - (runtime() - startTime) - (r1 - l1) > 0;
             }
-            vector<int> bestSampleIndex = getBestSample(curSamples, candidateSamples);
-            vector<int> bestSample = {candidateSamples[bestSampleIndex[0]].begin(),
-                                      candidateSamples[bestSampleIndex[0]].begin() +
-                                      bestSampleIndex[1]};
-            int bestScore = bestSampleIndex[2];
-            int bestLength = bestSampleIndex[3];
+
             curSamples.push_back(bestSample);
             results.push_back({bestScore, bestLength, bestSample});
             int totalValue = 0;
@@ -1979,11 +1976,10 @@ struct Strategy {
                 totalValue += result.value;
             }
             long r1 = runtime();
-            everySampleRunTime = max(1, (int) (r1 - l1) / int(candidateSamples.size()));
-            printError("curSize:" + to_string(curSamples.size()) + ",createCount:"
-                       + to_string(createCount) + ",realCount:" + to_string(candidateSamples.size()) + ",totalValue:"
-                       + to_string(totalValue) + ",everySampleRunTime:"
-                       + to_string(everySampleRunTime));
+            printError("curSize:" + to_string(curSamples.size()) + ",candidateSampleCount:"
+                       + to_string(candidateSampleCount) + ",realIterateCount:" + to_string(iterateCount)
+                       + ",totalValue:"
+                       + to_string(totalValue));
         }
         sort(results.begin(), results.end());
     }
@@ -2042,6 +2038,9 @@ struct Strategy {
                     break;
                 }
             }
+            if (noBetterCount != 0) {
+                break;
+            }
             if (runtime() > CREATE_OPTIMIZE_SAMPLES_MAX_TIME) {
                 break;
             }
@@ -2063,7 +2062,6 @@ struct Strategy {
 
         vector<SampleResult> bestResult = results;
         for (int i = 1; i < bestResult.size(); i++) {
-
             int initLength = EVERY_SCENE_MAX_FAIL_EDGE_COUNT;
             int popCount = int(createSampleRad() % 2) == 0 ? 1 : 2;
             vector<SampleResult> curResults = bestResult;
@@ -2232,10 +2230,10 @@ int main() {
             int end = runtime();
             printError("runTime:" + to_string(end - start) + ",aStarTime:" + to_string(strategy.searchTime) +
                        ",maxScore:" +
-                       to_string(strategy.maxScore).substr(0, to_string(strategy.maxScore).length() - 3) +
+                       to_string(strategy.resultScore[0]).substr(0, to_string(strategy.resultScore[0]).length() - 3) +
                        ",curScore:" +
-                       to_string(strategy.curScore).substr(0,
-                                                           to_string(strategy.curScore).length() - 3)
+                       to_string(strategy.resultScore[1]).substr(0,
+                                                                 to_string(strategy.resultScore[1]).length() - 3)
                        + ",time9:" + to_string(time9) + ",time5:" + to_string(time5) + ",time6:" + to_string(time6) +
                        ",time7:" +
                        to_string(time7));
