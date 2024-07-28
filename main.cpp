@@ -1327,10 +1327,15 @@ struct Strategy {
             sort(affectBusinesses.begin(), affectBusinesses.end(), [&](int aId, int bId) {
                 return aId < bId;
             });
+            sort(affectBusinesses.begin(), affectBusinesses.end(), [&](int aId, int bId) {
+                return buses[aId].value > buses[bId].value;
+            });
+        }else{
+            //跟java一致，使用稳定排序
+            stable_sort(affectBusinesses.begin(), affectBusinesses.end(), [&](int aId, int bId) {
+                return buses[aId].value > buses[bId].value;
+            });
         }
-        sort(affectBusinesses.begin(), affectBusinesses.end(), [&](int aId, int bId) {
-            return buses[aId].value > buses[bId].value;
-        });
         int affectSize = int(affectBusinesses.size());
 
 
@@ -1527,52 +1532,52 @@ struct Strategy {
         double avgEveryChannelValue = failTotalValue / remainChannels;
         //每个通道变现的价值
 
-        for (int i = 1; i < edges.size(); i++) {
-            vector<int> ids = getAllUnDieBusinessId(i);
-            edges[i].die = true;
-            double baseValue = 0;
-            double meValue = 0;
-            for (int id: ids) {
-                const vector<Point> &originPath = busesOriginResult[id];
-                Business &business = buses[id];
-                vector<Point> baseFindPath = baseLineFindPath(business);
-                vector<Point> meFindPath = aStarFindPath(business, originPath,
-                                                         EVERY_SCENE_MAX_FAIL_EDGE_COUNT, 1,
-                                                         true);
-
-                if (!baseFindPath.empty()) {
-                    baseValue += buses[id].value;
-                    baseValue -= (int(baseFindPath.size()) - int(originPath.size())) * business.needChannelLength *
-                                 avgEveryChannelValue;
-                    for (Point &point: baseFindPath) {
-                        vector<int> tmp;
-                        tmp.push_back(point.edgeId);
-                        tmp.push_back(buses[id].value);
-                        baseRepValue[i].push_back(tmp);
-                    }
-                } else {
-                    for (const Point &point: originPath) {
-                        vector<int> tmp;
-                        tmp.push_back(point.edgeId);
-                        tmp.push_back(buses[id].value);
-                        baseOriginValue[i].push_back(tmp);
-                    }
-                }
-                if (!meFindPath.empty()) {
-                    meValue += buses[id].value;
-                    meValue -= (int(meFindPath.size()) - int(originPath.size())) * business.needChannelLength *
-                               avgEveryChannelValue;
-                    for (Point &point: meFindPath) {
-                        vector<int> tmp;
-                        tmp.push_back(point.edgeId);
-                        tmp.push_back(buses[id].value);
-                        meRepValue[i].push_back(tmp);
-                    }
-                }
-            }
-            createScores[i] = (int) round(meValue - baseValue);
-            edges[i].die = false;
-        }
+//        for (int i = 1; i < edges.size(); i++) {
+//            vector<int> ids = getAllUnDieBusinessId(i);
+//            edges[i].die = true;
+//            double baseValue = 0;
+//            double meValue = 0;
+//            for (int id: ids) {
+//                const vector<Point> &originPath = busesOriginResult[id];
+//                Business &business = buses[id];
+//                vector<Point> baseFindPath = baseLineFindPath(business);
+//                vector<Point> meFindPath = aStarFindPath(business, originPath,
+//                                                         EVERY_SCENE_MAX_FAIL_EDGE_COUNT, 1,
+//                                                         true);
+//
+//                if (!baseFindPath.empty()) {
+//                    baseValue += buses[id].value;
+//                    baseValue -= (int(baseFindPath.size()) - int(originPath.size())) * business.needChannelLength *
+//                                 avgEveryChannelValue;
+//                    for (Point &point: baseFindPath) {
+//                        vector<int> tmp;
+//                        tmp.push_back(point.edgeId);
+//                        tmp.push_back(buses[id].value);
+//                        baseRepValue[i].push_back(tmp);
+//                    }
+//                } else {
+//                    for (const Point &point: originPath) {
+//                        vector<int> tmp;
+//                        tmp.push_back(point.edgeId);
+//                        tmp.push_back(buses[id].value);
+//                        baseOriginValue[i].push_back(tmp);
+//                    }
+//                }
+//                if (!meFindPath.empty()) {
+//                    meValue += buses[id].value;
+//                    meValue -= (int(meFindPath.size()) - int(originPath.size())) * business.needChannelLength *
+//                               avgEveryChannelValue;
+//                    for (Point &point: meFindPath) {
+//                        vector<int> tmp;
+//                        tmp.push_back(point.edgeId);
+//                        tmp.push_back(buses[id].value);
+//                        meRepValue[i].push_back(tmp);
+//                    }
+//                }
+//            }
+//            createScores[i] = (int) round(meValue - baseValue);
+//            edges[i].die = false;
+//        }
 
     }
 
