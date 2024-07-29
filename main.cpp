@@ -427,13 +427,13 @@ struct Strategy {
     inline static void updateEdgeChannelTable(Edge &edge) {
         const int *channel = edge.channel;
         int (*freeChannelTable)[CHANNEL_COUNT + 1] = edge.freeChannelTable;
-        int freeLength = 0;
         int l1 = runtime();
         edge.widthChannelTable.reset();
-        for (int i = 1; i <= CHANNEL_COUNT; i++) {
-            edge.freeChannelTable[i][0] = 0;//长度重新置为0
+        for (int i = 1; i <= CHANNEL_COUNT; ++i) {
+            freeChannelTable[i][0] = 0;//长度重新置为0
         }
-        for (int i = 1; i <= CHANNEL_COUNT; i++) {
+        int freeLength = 0;
+        for (int i = 1; i <= CHANNEL_COUNT; ++i) {
             if (channel[i] == -1) {
                 if (channel[i] == channel[i - 1]) {
                     freeLength++;
@@ -444,8 +444,8 @@ struct Strategy {
                 freeLength = 0;
             }
             if (freeLength > 0) {
-                for (int j = freeLength; j > 0; j--) {
-                    int start = i - j + 1;
+                for (int j = freeLength; j > 0; --j) {
+                    const int start = i - j + 1;
                     freeChannelTable[j][++freeChannelTable[j][0]] = start;
                     edge.widthChannelTable.set(j * (CHANNEL_COUNT + 1) + start);
                 }
@@ -465,6 +465,7 @@ struct Strategy {
         for (const Point &point: newPath) {
             Edge &edge = edges[point.edgeId];
             assert(edge.channel[point.startChannelId] == business.id);
+            bool changeChannel = false;
             for (int j = point.startChannelId; j <= point.endChannelId; j++) {
                 if (originEdgeIds.count(point.edgeId)
                     && j >= originEdgeIds[point.edgeId]
@@ -472,9 +473,12 @@ struct Strategy {
                             + business.needChannelLength - 1) {
                     continue;
                 }
+                changeChannel = true;
                 edge.channel[j] = -1;
             }
-            updateEdgeChannelTable(edge);
+            if (changeChannel && !edge.die) {
+                updateEdgeChannelTable(edge);
+            }
             int to = edge.from == from ? edge.to : edge.from;
             if (point.startChannelId != lastChannel && !originChangeV.count(from)) {
                 vertices[from].curChangeCount++;
@@ -494,11 +498,18 @@ struct Strategy {
         for (const Point &point: newPath) {
             Edge &edge = edges[point.edgeId];
             //占用通道
+            bool allReuse = true;//全部复用老路径不更新这条边，加快速度
             for (int j = point.startChannelId; j <= point.endChannelId; j++) {
                 assert(edge.channel[j] == -1 || edge.channel[j] == business.id);
-                edge.channel[j] = business.id;
+                if (edge.channel[j] == -1) {
+                    allReuse = false;
+                    edge.channel[j] = business.id;
+                }
+                //复用啥都不干
             }
-            updateEdgeChannelTable(edge);
+            if (!allReuse && !edge.die) {
+                updateEdgeChannelTable(edge);
+            }
             int to = edge.from == from ? edge.to : edge.from;
             if (point.startChannelId != lastChannel
                 && !originChangeV.count(from)) {//包含可以复用资源
@@ -1401,20 +1412,20 @@ struct Strategy {
 
 
         //1.选定最好生成策略
-        vector<SampleResult> results;
-        createBaseSamples(results, CREATE_BASE_SAMPLE_CANDIDATE_COUNT, CREATE_BASE_SAMPLES_MAX_TIME,
-                          CREATE_BASE_EDGE_CANDIDATE_COUNT, EVERY_SCENE_MAX_FAIL_EDGE_COUNT);
-        optimizeSamples(results);
-        vector<vector<int>> curSamples;
-        int shouldValue = 0;
-        for (const SampleResult &result: results) {
-            curSamples.push_back(result.sample);
-            shouldValue += result.value;
-        }
-        printError("shouldValue:" + to_string(shouldValue));
-
-
-        printMeCreateSamples(curSamples);
+//        vector<SampleResult> results;
+//        createBaseSamples(results, CREATE_BASE_SAMPLE_CANDIDATE_COUNT, CREATE_BASE_SAMPLES_MAX_TIME,
+//                          CREATE_BASE_EDGE_CANDIDATE_COUNT, EVERY_SCENE_MAX_FAIL_EDGE_COUNT);
+//        optimizeSamples(results);
+//        vector<vector<int>> curSamples;
+//        int shouldValue = 0;
+//        for (const SampleResult &result: results) {
+//            curSamples.push_back(result.sample);
+//            shouldValue += result.value;
+//        }
+//        printError("shouldValue:" + to_string(shouldValue));
+//
+//
+//        printMeCreateSamples(curSamples);
 //// 规划段 本地测试
 //        if (LOCAL_TEST_CREATE) {
 //            double myScore = 0, baseScore = 0;
@@ -1471,52 +1482,36 @@ struct Strategy {
 //            return;
 //        }
 
-//        int t;
-//        scanf("%d", &t);
-//        maxScore = 10000.0 * t;
-//        int maxLength = INT_INF;//每一个测试场景的断边数，默认是无穷个，猜测每次都一样
-//        for (int i = 0; i < t; i++) {
-//            //邻接表
-//            vector<vector<Point>> curBusesResult = busesOriginResult;
-//            int curLength = 0;
-//            scanf("%d", &curLength);
-//            for (int j = 0; j < curLength; ++j) {
-//                int failEdgeId = -1;
-//                scanf("%d", &failEdgeId);
-//                if (failEdgeId == -1) {
-//                    break;
-//                }
-//                dispatch(curBusesResult, failEdgeId, curLength,
-//                         j + 1, false, false, true);
-//            }
-//            while (true) {
-//                int failEdgeId = -1;
-//                scanf("%d", &failEdgeId);
-//                if (failEdgeId == -1) {
-//                    break;
-//                }
-//                curLength++;
-////                if (i < curSamples.size()) {
-////                    dispatch(curBusesResult, failEdgeId, int(curSamples[i].size()),
-////                             curLength, false, true, true);
-////                    //自己的不能迭代，效果会差
-////                } else {
-//                dispatch(curBusesResult, failEdgeId, EVERY_SCENE_MAX_FAIL_EDGE_COUNT,
-//                         curLength, true, true, true);
-//                // }
-//            }
-//            maxLength = curLength;
-//            int totalValue = 0;
-//            int remainValue = 0;
-//            for (int j = 1; j < buses.size(); j++) {
-//                totalValue += buses[j].value;
-//                if (!buses[j].die) {
-//                    remainValue += buses[j].value;
-//                }
-//            }
-//            curScore += 10000.0 * remainValue / totalValue;
-//            reset();
-//        }
+        int t;
+        scanf("%d", &t);
+        resultScore[0] = 10000.0 * t;
+        int maxLength = INT_INF;//每一个测试场景的断边数，默认是无穷个，猜测每次都一样
+        for (int i = 0; i < t; i++) {
+            //邻接表
+            vector<vector<Point>> curBusesResult = busesOriginResult;
+            int curLength = 0;
+            scanf("%d", &curLength);
+            for (int j = 0; j < curLength; ++j) {
+                int failEdgeId = -1;
+                scanf("%d", &failEdgeId);
+                if (failEdgeId == -1) {
+                    break;
+                }
+                dispatch(curBusesResult, failEdgeId, curLength,
+                         j + 1, false, false, true);
+            }
+            maxLength = curLength;
+            int totalValue = 0;
+            int remainValue = 0;
+            for (int j = 1; j < buses.size(); j++) {
+                totalValue += buses[j].value;
+                if (!buses[j].die) {
+                    remainValue += buses[j].value;
+                }
+            }
+            resultScore[1] += 10000.0 * remainValue / totalValue;
+            reset();
+        }
     }
 };
 
