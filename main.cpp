@@ -315,7 +315,8 @@ struct Strategy {
                     }
                 }
                 if (sk.empty()) {
-                    cacheMap.erase(totalDeep);
+                    cacheMap.erase(cacheMap.begin());
+                    //cacheMap.erase(totalDeep);
                 }
             }
             if (endChannel == -1) {
