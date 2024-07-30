@@ -218,91 +218,33 @@ struct Strategy {
         }
 
 
+        inline static vector<Point>
+        aStar(const int start, const int end, const int width, const vector<NearEdge> searchGraph[MAX_N + 1],
+              const vector<Edge> &edges, const vector<Vertex> &vertices,
+              const int minDistance[MAX_N + 1][MAX_N + 1], int maxResource) {
 
-
-        inline static vector<Point> aStar2(const int start, const int end, const int width,
-                                           const vector<NearEdge> searchGraph[MAX_N + 1],
-                                           const vector<Edge> &edges, const vector<Vertex> &vertices,
-                                           const int minDistance[MAX_N + 1][MAX_N + 1], const int maxResource) {
             static bitset<MAX_N + 1> parentVertexes[MAX_N + 1][CHANNEL_COUNT + 1];
-            struct FastQueue {
-                int size = 0;
-                int dataDist[CHANNEL_COUNT * MAX_N * 10]{};
-                int dataChannelVertex[CHANNEL_COUNT * MAX_N * 10]{};
-
-                void push(int dist, int channelVertex) {
-                    //上推
-                    int index = size + 1;
-                    while (index != 1) {
-                        int last = index >> 1;
-                        if (dataDist[last] > dist) {
-                            //下推；
-                            dataDist[index] = dataDist[last];
-                            dataChannelVertex[index] = dataChannelVertex[last];
-                            index >>= 1;
-                        } else {
-                            break;
-                        }
-                    }
-                    dataDist[index] = dist;
-                    dataChannelVertex[index] = channelVertex;
-                    ++size;
-                }
-
-                int pop() {
-                    //弹出第一个
-                    int result = dataChannelVertex[1];
-                    //最后一个放入第一个当中，下推
-                    int curDist = dataDist[size];
-                    int curChannelVertex = dataChannelVertex[size];
-                    int index = 1;
-                    while (true) {
-                        int next = index << 1;
-                        if (next > size) break;
-                        int curMinDist = dataDist[next];
-                        int curMin = next;
-                        if (next + 1 <= size && dataDist[next + 1] < curMinDist) {
-                            curMinDist = dataDist[next + 1];
-                            curMin = next + 1;
-                        }
-                        if (curMinDist < curDist) {
-                            dataDist[index] = dataDist[curMin];
-                            dataChannelVertex[index] = dataChannelVertex[curMin];
-                            index = curMin;
-                        } else {
-                            break;
-                        }
-                    }
-                    dataDist[index] = curDist;
-                    dataChannelVertex[index] = curChannelVertex;
-                    --size;
-                    return result;
-                }
-
-                bool empty() const {
-                    return size == 0;
-                }
-
-                void clear() {
-                    size = 0;
-                }
-            };
             static int timestamp[MAX_N + 1][CHANNEL_COUNT + 1], dist[MAX_N + 1][CHANNEL_COUNT + 1]
             , parentStartChannelEdgeId[MAX_N + 1][CHANNEL_COUNT + 1];
             static int timestampId = 1;//距离
-            static FastQueue q;
-            q.clear();
+            static map<int, stack<int>> cacheMap;
             timestampId++;
+            cacheMap.clear();
+            stack<int> &tmp = cacheMap[minDistance[start][end] * EDGE_LENGTH_WEIGHT * width];
             //往上丢是最好的，因为测试用例都往下丢，往上能流出更多空间
             for (int i = 1; i <= CHANNEL_COUNT; ++i) {
                 dist[start][i] = 0;
                 timestamp[start][i] = timestampId;
                 parentVertexes[start][i].reset();
-                q.push(minDistance[start][end] * EDGE_LENGTH_WEIGHT * width, (i << 16) + start);
+                tmp.emplace((i << 16) + start);
             }
             int endChannel = -1;
-            while (!q.empty()) {
-                const int poll = q.pop();
+            while (!cacheMap.empty()) {
+                pair<const int, stack<int>> &entry = *cacheMap.begin();
+                const int totalDeep = entry.first;
+                stack<int> &sk = entry.second;
+                const int poll = sk.top();
+                sk.pop();
                 const int lastChannel = poll >> 16;
                 const int lastVertex = poll & 0xFFFF;
                 const int lastDeep = dist[lastVertex][lastChannel];
@@ -342,8 +284,8 @@ struct Strategy {
                         parentStartChannelEdgeId[next][startChannel] = (lastChannel << 16) + nearEdge.id;
                         parentVertexes[next][startChannel] = parentVertexes[lastVertex][lastChannel];
                         parentVertexes[next][startChannel].set(lastVertex);
-                        q.push(nextDistance + width * EDGE_LENGTH_WEIGHT * minDistance[next][end],
-                               (startChannel << 16) + next);
+                        cacheMap[nextDistance + width * EDGE_LENGTH_WEIGHT * minDistance[next][end]]
+                                .emplace((startChannel << 16) + next);
                     } else {
                         //能变通道
                         const int *freeChannelTable = edge.freeChannelTable[width];
@@ -367,10 +309,13 @@ struct Strategy {
                             parentStartChannelEdgeId[next][startChannel] = (lastChannel << 16) + nearEdge.id;
                             parentVertexes[next][startChannel] = parentVertexes[lastVertex][lastChannel];
                             parentVertexes[next][startChannel].set(lastVertex);
-                            q.push(nextDistance + width * EDGE_LENGTH_WEIGHT * minDistance[next][end],
-                                   (startChannel << 16) + next);
+                            cacheMap[nextDistance + width * EDGE_LENGTH_WEIGHT * minDistance[next][end]]
+                                    .emplace((startChannel << 16) + next);
                         }
                     }
+                }
+                if (sk.empty()) {
+                    cacheMap.erase(totalDeep);
                 }
             }
             if (endChannel == -1) {
@@ -402,6 +347,7 @@ struct Strategy {
             }
             return path;
         }
+
     };
 
     //恢复场景
@@ -598,8 +544,8 @@ struct Strategy {
 
         int l1 = runtime();
         vector<Point> path = SearchUtils::aStar(from, to, width,
-                                                 searchGraph, edges, vertices, minDistance,
-                                                 originResource + extraResource);
+                                                searchGraph, edges, vertices, minDistance,
+                                                originResource + extraResource);
         int r1 = runtime();
         searchTime += r1 - l1;
         redoBusiness(business, originPath, {});
