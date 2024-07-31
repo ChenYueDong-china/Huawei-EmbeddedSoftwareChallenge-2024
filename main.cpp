@@ -58,6 +58,8 @@ const int CHANNEL_COUNT = 40;
 const auto programStartTime = std::chrono::steady_clock::now();
 const int INT_INF = 0x7f7f7f7f;
 
+int time9 = 0;
+
 inline int runtime() {
     auto now = std::chrono::steady_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(now - programStartTime);
@@ -426,6 +428,7 @@ struct Strategy {
 
     //更新边的通道表，加快aStar搜索速度使用
     inline static void updateEdgeChannelTable(Edge &edge) {
+        int l1 = runtime();
         const int *channel = edge.channel;
         int (*freeChannelTable)[CHANNEL_COUNT + 1] = edge.freeChannelTable;
         edge.widthChannelTable.reset();
@@ -451,6 +454,8 @@ struct Strategy {
                 }
             }
         }
+        int r1 = runtime();
+        time9 += r1 - l1;
     }
 
     //在老路径基础上，回收新路径
@@ -524,7 +529,8 @@ struct Strategy {
 
     //aStar寻路
     inline vector<Point>
-    aStarFindPath(Business &business, const vector<Point> &originPath, int maxLength, int curLength, bool test) {
+    aStarFindPath(Business &business, const vector<Point> &originPath, int maxLength, int curLength, bool test,
+                  bool findRedo) {
         int from = business.from;
         int to = business.to;
         int width = business.needChannelLength;
@@ -563,8 +569,9 @@ struct Strategy {
                                                 originResource + extraResource);
         int r1 = runtime();
         searchTime += r1 - l1;
-        redoBusiness(business, originPath, {}, true);
-
+        if (findRedo || path.empty()) {
+            redoBusiness(business, originPath, {}, true);
+        }
         return path;
     }
 
@@ -703,14 +710,33 @@ struct Strategy {
         for (int id: affectBusinesses) {
             Business &business = buses[id];
             vector<Point> path;
+            vector<Point> &originPath = curBusesResult[business.id];
             if (base) {
                 path = baseLineFindPath(business);
             } else {
-                path = aStarFindPath(business, curBusesResult[business.id], maxLength, curLength, test);
+                path = aStarFindPath(business, originPath, maxLength, curLength, test, false);
             }
             if (!path.empty()) {
                 //变通道次数得减回去
-                redoBusiness(business, path, curBusesResult[business.id], true);
+                unordered_set<int> updateEdgesId;//一起更新
+                if (!base) {
+                    //没有redo，要自己redo
+                    redoBusiness(business, originPath, {}, false);
+                    for (const auto &item: originPath) {
+                        if (!edges[item.edgeId].die) {
+                            updateEdgesId.insert(item.edgeId);
+                        }
+                    }
+                }
+                redoBusiness(business, path, originPath, false);
+                for (const auto &item: path) {
+                    if (!edges[item.edgeId].die) {
+                        updateEdgesId.insert(item.edgeId);
+                    }
+                }
+                for (const auto &edgeId: updateEdgesId) {
+                    updateEdgeChannelTable(edges[edgeId]);
+                }
                 satisfyBusesResult[business.id] = std::move(path);
             }
         }
@@ -975,7 +1001,7 @@ struct Strategy {
                 vector<Point> baseFindPath = baseLineFindPath(business);
                 vector<Point> meFindPath = aStarFindPath(business, originPath,
                                                          EVERY_SCENE_MAX_FAIL_EDGE_COUNT, 1,
-                                                         true);
+                                                         true, true);
                 if (!baseFindPath.empty()) {
                     baseValue += buses[id].value;
                     for (Point &point: baseFindPath) {
@@ -1551,9 +1577,9 @@ struct Strategy {
                     break;
                 }
                 //min(int(edges.size()) / 5, EVERY_SCENE_MAX_FAIL_EDGE_COUNT)
+                //min(maxCurLength,min(int(edges.size()) / 5, EVERY_SCENE_MAX_FAIL_EDGE_COUNT))
                 dispatch(curBusesResult, failEdgeId,
-                         min(maxCurLength,
-                             min(int(edges.size()) / 5, EVERY_SCENE_MAX_FAIL_EDGE_COUNT)),
+                         curLength,
                          j + 1, false, false, true);
             }
             if (maxCurLength != INT_INF) {
@@ -1640,7 +1666,9 @@ int main() {
                        to_string(strategy.resultScore[0]).substr(0, to_string(strategy.resultScore[0]).length() - 3) +
                        ",curScore:" +
                        to_string(strategy.resultScore[1]).substr(0,
-                                                                 to_string(strategy.resultScore[1]).length() - 3));
+
+                                                                 to_string(strategy.resultScore[1]).length()
+                                                                 - 3) + ",time9:" + to_string(time9));
         }
     } else {
         strategy.init();
