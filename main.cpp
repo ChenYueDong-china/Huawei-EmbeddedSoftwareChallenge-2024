@@ -1508,39 +1508,6 @@ struct Strategy {
 //            return;
 //        }
 
-//        int t;
-//        scanf("%d", &t);
-//        resultScore[0] = 10000.0 * t;
-//        int maxLength = INT_INF;//每一个测试场景的断边数，默认是无穷个，猜测每次都一样
-//        for (int i = 0; i < t; i++) {
-//            //邻接表
-//            vector<vector<Point>> curBusesResult = busesOriginResult;
-//            int curLength = 0;
-//            scanf("%d", &curLength);
-//            for (int j = 0; j < curLength; ++j) {
-//                int failEdgeId = -1;
-//                scanf("%d", &failEdgeId);
-//                if (failEdgeId == -1) {
-//                    break;
-//                }
-//                dispatch(curBusesResult, failEdgeId, curLength,
-//                         j + 1, false, false, true);
-//            }
-//            maxLength = curLength;
-//            int totalValue = 0;
-//            int remainValue = 0;
-//            for (int j = 1; j < buses.size(); j++) {
-//                totalValue += buses[j].value;
-//                if (!buses[j].die) {
-//                    remainValue += buses[j].value;
-//                }
-//            }
-//            resultScore[1] += 10000.0 * remainValue / totalValue;
-//            reset();
-//        }
-
-
-//      实际线上
         int t;
         scanf("%d", &t);
         resultScore[0] = 10000.0 * t;
@@ -1549,23 +1516,18 @@ struct Strategy {
             //邻接表
             vector<vector<Point>> curBusesResult = busesOriginResult;
             int curLength = 0;
-            while (true) {
+            scanf("%d", &curLength);
+            for (int j = 0; j < curLength; ++j) {
                 int failEdgeId = -1;
                 scanf("%d", &failEdgeId);
                 if (failEdgeId == -1) {
                     break;
                 }
-                curLength++;
-                if (i < curSamples.size()) {
-                    dispatch(curBusesResult, failEdgeId, results[i].maxLength,
-                             curLength, false, true, true);
-                } else {
-                    //min(int(edges.size()) / 5, EVERY_SCENE_MAX_FAIL_EDGE_COUNT)
-                    dispatch(curBusesResult, failEdgeId,
-                             min(maxCurLength, min(int(edges.size()) / 5, EVERY_SCENE_MAX_FAIL_EDGE_COUNT))
-                             ,
-                             curLength, false, false, true);
-                }
+                //min(int(edges.size()) / 5, EVERY_SCENE_MAX_FAIL_EDGE_COUNT)
+                dispatch(curBusesResult, failEdgeId,
+                         min(maxCurLength,
+                             min(int(edges.size()) / 5, EVERY_SCENE_MAX_FAIL_EDGE_COUNT)),
+                         j + 1, false, false, true);
             }
             if(maxCurLength!=INT_INF){
                 maxCurLength = max(maxCurLength,curLength);
@@ -1583,6 +1545,51 @@ struct Strategy {
             resultScore[1] += 10000.0 * remainValue / totalValue;
             reset();
         }
+
+
+//        实际线上
+//        int t;
+//        scanf("%d", &t);
+//        resultScore[0] = 10000.0 * t;
+//        int maxCurLength = INT_INF;//假设每次断边一样长？？？
+//        for (int i = 0; i < t; i++) {
+//            //邻接表
+//            vector<vector<Point>> curBusesResult = busesOriginResult;
+//            int curLength = 0;
+//            while (true) {
+//                int failEdgeId = -1;
+//                scanf("%d", &failEdgeId);
+//                if (failEdgeId == -1) {
+//                    break;
+//                }
+//                curLength++;
+//                if (i < curSamples.size()) {
+//                    dispatch(curBusesResult, failEdgeId, results[i].maxLength,
+//                             curLength, false, true, true);
+//                } else {
+//                    //min(int(edges.size()) / 5, EVERY_SCENE_MAX_FAIL_EDGE_COUNT) 3-5
+//                    dispatch(curBusesResult, failEdgeId,
+//                             min(maxCurLength, min(int(edges.size()) / 5, EVERY_SCENE_MAX_FAIL_EDGE_COUNT))
+//                             ,
+//                             curLength, false, false, true);
+//                }
+//            }
+//            if(maxCurLength!=INT_INF){
+//                maxCurLength = max(maxCurLength,curLength);
+//            }else{
+//                maxCurLength=curLength;
+//            }
+//            int totalValue = 0;
+//            int remainValue = 0;
+//            for (int j = 1; j < buses.size(); j++) {
+//                totalValue += buses[j].value;
+//                if (!buses[j].die) {
+//                    remainValue += buses[j].value;
+//                }
+//            }
+//            resultScore[1] += 10000.0 * remainValue / totalValue;
+//            reset();
+//        }
     }
 };
 
