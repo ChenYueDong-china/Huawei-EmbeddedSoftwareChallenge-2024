@@ -21,17 +21,17 @@ using namespace std;
 //创建参数
 static bool LOCAL_TEST_CREATE = true;//线上改为false
 const int CREATE_SAMPLE_RANDOM_SEED = 666;//创建样例种子
-const int CREATE_BASE_SAMPLE_CANDIDATE_COUNT = 5;//候选序列
-const int CREATE_OPTIMIZE_SAMPLE_CANDIDATE_COUNT = 5;//候选序列
-const int CREATE_BASE_EDGE_CANDIDATE_COUNT = 15;//大于0号策略时，每一次随机从20个中选一个
-const int CREATE_OPTIMIZE_EDGE_CANDIDATE_COUNT = 20;//大于0号策略时，每一次随机从20个中选一个
+const int CREATE_BASE_SAMPLE_CANDIDATE_COUNT = 5;//基础序列生成，候选序列个数
+const int CREATE_OPTIMIZE_SAMPLE_CANDIDATE_COUNT = 5;//优化基础序列，候选序列个数
+const int CREATE_BASE_EDGE_CANDIDATE_COUNT = 15;//基础序列生成，候选边的条数
+const int CREATE_OPTIMIZE_EDGE_CANDIDATE_COUNT = 20;//优化基础序列，候选边的条数
 const int CREATE_SHUFFLE_MAX_TRY_COUNT = 5;//不满足相似度约束时，最多尝试几次？
-const int CREATE_BASE_SAMPLES_MAX_TIME = 20 * 1000;//留1s阈值
-const int CREATE_OPTIMIZE_SAMPLES_MAX_TIME = CREATE_BASE_SAMPLES_MAX_TIME + 20 * 1000;//留1s阈值
+const int CREATE_BASE_SAMPLES_MAX_TIME = 20 * 1000;//基础序列生成，最大运行时间
+const int CREATE_OPTIMIZE_SAMPLES_MAX_TIME = CREATE_BASE_SAMPLES_MAX_TIME + 20 * 1000;//优化基础序列，最大运行时间
 
 
-const double MY_SAMPLE_SEARCH_RESOURCE_FACTOR = 1.0;
-const double OTHER_SAMPLE_SEARCH_RESOURCE_FACTOR = 1.0;
+const double MY_SAMPLE_SEARCH_RESOURCE_FACTOR = 1.0;//创建我自己样例的寻路因子
+const double OTHER_SAMPLE_SEARCH_RESOURCE_FACTOR = 1.0;//优化其他样例的寻路因子
 
 
 //创建常量
@@ -42,14 +42,14 @@ const int EVERY_SCENE_MAX_FAIL_EDGE_COUNT = 60;//一个场景场景最大断边�
 
 //迭代参数
 const int SEARCH_RANDOM_SEED = 666;//搜索种子
-static bool IS_ONLINE = false;//使劲迭代人家的，留1s阈值
-int CHANGE_CHANNEL_WEIGHT = 1;//变通道权重
-const int EDGE_LENGTH_WEIGHT = 100;//边的权重
+static bool IS_ONLINE = false;//是否线上，可以充分利用时间迭代他给的样例
+int CHANGE_CHANNEL_WEIGHT = 1;//变通道权重，最好init直接动态调整好一点，定死效果不太好
+const int EDGE_LENGTH_WEIGHT = 100;//边的权重，基本可以不改变
 
 
 //搜索常量
-static int MAX_E_FAIL_COUNT = 4200;//他生成的的样例，最大断边数5k
-const int SEARCH_TIME = 90 * 1000;
+static int MAX_E_FAIL_COUNT = 4200;//他的的样例的最大断边数，最大断边数5k
+const int SEARCH_TIME = 90 * 1000;//程序整体运行时间
 
 //其他常量
 const int MAX_M = 1000;
@@ -57,8 +57,6 @@ const int MAX_N = 200;
 const int CHANNEL_COUNT = 40;
 const auto programStartTime = std::chrono::steady_clock::now();
 const int INT_INF = 0x7f7f7f7f;
-
-int time9 = 0;
 
 inline int runtime() {
     auto now = std::chrono::steady_clock::now();
@@ -134,29 +132,29 @@ struct Strategy {
     vector<Vertex> vertices;
     vector<vector<NearEdge>> graph;//邻接表
     vector<NearEdge> searchGraph[MAX_N + 1];//邻接表
-    vector<NearEdge> baseSearchGraph[MAX_N + 1];//邻接表
-    vector<Business> buses;//邻接表
+    vector<NearEdge> baseSearchGraph[MAX_N + 1];//baseline的邻接表
+    vector<Business> buses;//业务
     struct Point {
         int edgeId;
         int startChannelId;
         int endChannelId;
     };
-    vector<vector<Point>> busesOriginResult;//邻接表
-    int minDistance[MAX_N + 1][MAX_N + 1]{};//邻接表
-    int searchTime = 0;
-    int curHandleCount = 0;
-    double resultScore[2]{};
-    int totalResource = 0;//初始状态剩余的资源
-    int remainResource = 0;//初始状态剩余的资源
-    double totalEdgeValue = 0;//平均断一条边影响的价值
-    double remainEdgeValue = 0;//平均断一条边影响的价值
-    double remainEdgeSize = 0;//平均断一条边影响的价值
-    double curAffectEdgeValue = 0;//平均断一条边影响的价值
-    double avgEdgeAffectValue = 0;//平均断一条边影响的价值
-    int createScores[MAX_M + 1]{};//基础分
-    vector<vector<int>> baseRepValue[MAX_M + 1];//断掉应该增加的分
-    vector<vector<int>> meRepValue[MAX_M + 1];//断掉应该增加的分
-    vector<vector<int>> baseOriginValue[MAX_M + 1];//断掉应该增加的分
+    vector<vector<Point>> busesOriginResult;//业务最开始路径
+    int minDistance[MAX_N + 1][MAX_N + 1]{};//用于aStar启发
+    int searchTime = 0; //统计寻路时间
+    int curHandleCount = 0;//目前处理的他给的断边总体个数
+    double resultScore[2]{}; //分数，0最大分数，1当前分数
+    int totalResource = 0;//总体资源
+    int remainResource = 0;//当前剩余资源
+    double totalEdgeValue = 0;//边上的总体价值，可以叠加
+    double remainEdgeValue = 0;//剩余的边上的价值
+    double remainEdgeSize = 0;//剩余存活的边数
+    double curAffectEdgeValue = 0;//当前断边影响的边上的价值
+    double avgEdgeAffectValue = 0;//平均断一条边影响的价值，最开始计算一边
+    int createScores[MAX_M + 1]{};//生成基础打分
+    vector<vector<int>> baseRepValue[MAX_M + 1];//base寻到的路径，应该增加的分让他后面断掉
+    vector<vector<int>> meRepValue[MAX_M + 1];//我寻到的路径，应该减少分，让他存活
+    vector<vector<int>> baseOriginValue[MAX_M + 1];//base寻不到的路径，应该减少分，因为死亡了不重复断
 
     struct SearchUtils {
 
@@ -430,7 +428,6 @@ struct Strategy {
     inline static void updateEdgeChannelTable(Edge &edge) {
         const int *channel = edge.channel;
         int (*freeChannelTable)[CHANNEL_COUNT + 1] = edge.freeChannelTable;
-        int l1 = runtime();
         edge.widthChannelTable.reset();
         for (int i = 1; i <= CHANNEL_COUNT; ++i) {
             freeChannelTable[i][0] = 0;//长度重新置为0
@@ -454,8 +451,6 @@ struct Strategy {
                 }
             }
         }
-        int r1 = runtime();
-        time9 += r1 - l1;
     }
 
     //在老路径基础上，回收新路径
@@ -1566,8 +1561,7 @@ int main() {
                        to_string(strategy.resultScore[0]).substr(0, to_string(strategy.resultScore[0]).length() - 3) +
                        ",curScore:" +
                        to_string(strategy.resultScore[1]).substr(0,
-                                                                 to_string(strategy.resultScore[1]).length() - 3)
-                       + ",time9:" + to_string(time9));
+                                                                 to_string(strategy.resultScore[1]).length() - 3));
         }
     } else {
         strategy.init();
