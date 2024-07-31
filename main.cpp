@@ -581,13 +581,13 @@ struct Strategy {
 
     //把全部增加上的新路径回收掉
     void undoResult(const unordered_map<int, vector<Point>> &result, const vector<vector<Point>> &curBusesResult,
-                    int tmpRemainResource, bool onlyOne) {
+                    int tmpRemainResource, bool onlySearchOne) {
         for (const auto &entry: result) {
             int id = entry.first;
             const vector<Point> &newPath = entry.second;
             Business &business = buses[id];
             const vector<Point> &originPath = curBusesResult[business.id];
-            if (!onlyOne) {
+            if (!onlySearchOne) {
                 undoBusiness(business, newPath, originPath);
             }
         }
@@ -596,7 +596,7 @@ struct Strategy {
 
     //把全部需要增加上的新路径增加进去，并且回收老路径
     void redoResult(vector<int> &affectBusinesses, unordered_map<int, vector<Point>> &result,
-                    vector<vector<Point>> &curBusesResult, bool onlyOne) {
+                    vector<vector<Point>> &curBusesResult, bool onlySearchOne) {
         remainEdgeSize--;
         for (const auto &entry: result) {
             int id = entry.first;
@@ -604,7 +604,7 @@ struct Strategy {
             const vector<Point> &originPath = curBusesResult[id];
             const Business &business = buses[id];
             //先加入新路径
-            if (!onlyOne) {
+            if (!onlySearchOne) {
                 redoBusiness(business, newPath, originPath);
             }
             remainEdgeValue -= int(originPath.size()) * business.value;
@@ -1442,16 +1442,16 @@ struct Strategy {
         //1.选定最好生成策略
         vector<vector<int>> curSamples;
         vector<SampleResult> results;
-//        createBaseSamples(results, CREATE_BASE_SAMPLE_CANDIDATE_COUNT, CREATE_BASE_SAMPLES_MAX_TIME,
-//                          CREATE_BASE_EDGE_CANDIDATE_COUNT, EVERY_SCENE_MAX_FAIL_EDGE_COUNT);
-//        optimizeSamples(results);
-//        int shouldValue = 0;
-//        for (const SampleResult &result: results) {
-//            curSamples.push_back(result.sample);
-//            shouldValue += result.value;
-//        }
-//        printError("shouldValue:" + to_string(shouldValue));
-//        printMeCreateSamples(curSamples);
+        createBaseSamples(results, CREATE_BASE_SAMPLE_CANDIDATE_COUNT, CREATE_BASE_SAMPLES_MAX_TIME,
+                          CREATE_BASE_EDGE_CANDIDATE_COUNT, EVERY_SCENE_MAX_FAIL_EDGE_COUNT);
+        optimizeSamples(results);
+        int shouldValue = 0;
+        for (const SampleResult &result: results) {
+            curSamples.push_back(result.sample);
+            shouldValue += result.value;
+        }
+        printError("shouldValue:" + to_string(shouldValue));
+        printMeCreateSamples(curSamples);
 //// 规划段 本地测试
 //        if (LOCAL_TEST_CREATE) {
 //            double myScore = 0, baseScore = 0;
