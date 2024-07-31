@@ -43,7 +43,7 @@ const int EVERY_SCENE_MAX_FAIL_EDGE_COUNT = 60;//一个场景场景最大断边�
 //迭代参数
 const int SEARCH_RANDOM_SEED = 666;//搜索种子
 static bool IS_ONLINE = false;//是否线上，可以充分利用时间迭代他给的样例
-int CHANGE_CHANNEL_WEIGHT = 1;//变通道权重，最好init直接动态调整好一点，定死效果不太好
+int CHANGE_CHANNEL_WEIGHT = 300;//变通道权重，最好init直接动态调整好一点，定死效果不太好
 const int EDGE_LENGTH_WEIGHT = 100;//边的权重，基本可以不改变
 
 
@@ -454,7 +454,8 @@ struct Strategy {
     }
 
     //在老路径基础上，回收新路径
-    inline void undoBusiness(const Business &business, const vector<Point> &newPath, const vector<Point> &originPath) {
+    inline void undoBusiness(const Business &business, const vector<Point> &newPath, const vector<Point> &originPath,
+                             bool shouldUpdateEdgeTable) {
         //变通道次数加回来
         unordered_set<int> originChangeV = getOriginChangeV(business, originPath);
         unordered_map<int, int> originEdgeIds = getOriginEdgeIds(originPath);
@@ -474,7 +475,7 @@ struct Strategy {
                 changeChannel = true;
                 edge.channel[j] = -1;
             }
-            if (changeChannel && !edge.die) {
+            if (shouldUpdateEdgeTable && changeChannel && !edge.die) {
                 updateEdgeChannelTable(edge);
             }
             int to = edge.from == from ? edge.to : edge.from;
@@ -489,7 +490,8 @@ struct Strategy {
     }
 
     //在老路径基础上，增加新路径
-    inline void redoBusiness(const Business &business, const vector<Point> &newPath, const vector<Point> &originPath) {
+    inline void redoBusiness(const Business &business, const vector<Point> &newPath, const vector<Point> &originPath,
+                             bool shouldUpdateEdgeTable) {
         unordered_set<int> originChangeV = getOriginChangeV(business, originPath);
         int from = business.from;
         int lastChannel = newPath[0].startChannelId;
@@ -505,7 +507,7 @@ struct Strategy {
                 }
                 //复用啥都不干
             }
-            if (!allReuse && !edge.die) {
+            if (shouldUpdateEdgeTable && !allReuse && !edge.die) {
                 updateEdgeChannelTable(edge);
             }
             int to = edge.from == from ? edge.to : edge.from;
@@ -528,7 +530,7 @@ struct Strategy {
         int width = business.needChannelLength;
 
         int originResource = calculatesResource(originPath);
-        undoBusiness(business, originPath, {});
+        undoBusiness(business, originPath, {}, true);
 
 
 
@@ -561,7 +563,7 @@ struct Strategy {
                                                 originResource + extraResource);
         int r1 = runtime();
         searchTime += r1 - l1;
-        redoBusiness(business, originPath, {});
+        redoBusiness(business, originPath, {}, true);
 
         return path;
     }
@@ -582,22 +584,33 @@ struct Strategy {
     //把全部增加上的新路径回收掉
     void undoResult(const unordered_map<int, vector<Point>> &result, const vector<vector<Point>> &curBusesResult,
                     int tmpRemainResource, bool onlySearchOne) {
+        unordered_set<int> updateEdgesId;//一起更新
         for (const auto &entry: result) {
             int id = entry.first;
             const vector<Point> &newPath = entry.second;
             Business &business = buses[id];
             const vector<Point> &originPath = curBusesResult[business.id];
             if (!onlySearchOne) {
-                undoBusiness(business, newPath, originPath);
+                undoBusiness(business, newPath, originPath, false);
+                for (const auto &item: newPath) {
+                    if (!edges[item.edgeId].die) {
+                        updateEdgesId.insert(item.edgeId);
+                    }
+                }
             }
+        }
+        for (const auto &id: updateEdgesId) {
+            updateEdgeChannelTable(edges[id]);
         }
         remainResource = tmpRemainResource;
     }
+
 
     //把全部需要增加上的新路径增加进去，并且回收老路径
     void redoResult(vector<int> &affectBusinesses, unordered_map<int, vector<Point>> &result,
                     vector<vector<Point>> &curBusesResult, bool onlySearchOne) {
         remainEdgeSize--;
+        unordered_set<int> updateEdgesId;//一起更新
         for (const auto &entry: result) {
             int id = entry.first;
             const vector<Point> &newPath = entry.second;
@@ -605,17 +618,31 @@ struct Strategy {
             const Business &business = buses[id];
             //先加入新路径
             if (!onlySearchOne) {
-                redoBusiness(business, newPath, originPath);
+                redoBusiness(business, newPath, originPath, false);
+                for (const auto &item: newPath) {
+                    if (!edges[item.edgeId].die) {
+                        updateEdgesId.insert(item.edgeId);
+                    }
+                }
             }
+            //未错误，误报
+            undoBusiness(business, originPath, newPath, false);
+            for (const auto &item: originPath) {
+                if (!edges[item.edgeId].die) {
+                    updateEdgesId.insert(item.edgeId);
+                }
+            }
+
             remainEdgeValue -= int(originPath.size()) * business.value;
             remainEdgeValue += int(newPath.size()) * business.value;
-            //未错误，误报
-            undoBusiness(business, originPath, newPath);
             remainResource += calculatesResource(originPath);
             //断边上的资源无法回收
             remainResource -= business.needChannelLength * EDGE_LENGTH_WEIGHT;
             remainResource -= calculatesResource(newPath);
             curBusesResult[business.id] = newPath;
+        }
+        for (const auto &id: updateEdgesId) {
+            updateEdgeChannelTable(edges[id]);
         }
         for (const int &id: affectBusinesses) {
             Business &business = buses[id];
@@ -683,7 +710,7 @@ struct Strategy {
             }
             if (!path.empty()) {
                 //变通道次数得减回去
-                redoBusiness(business, path, curBusesResult[business.id]);
+                redoBusiness(business, path, curBusesResult[business.id], true);
                 satisfyBusesResult[business.id] = std::move(path);
             }
         }
@@ -851,7 +878,7 @@ struct Strategy {
                 scanf("%d", &edgeId);
                 busesOriginResult[i].push_back({edgeId, L, R});
             }
-            redoBusiness(buses[i], busesOriginResult[i], {});//防止复赛修改为初始业务也能变通道
+            redoBusiness(buses[i], busesOriginResult[i], {}, false);//防止复赛修改为初始业务也能变通道
         }
 
 
@@ -1442,16 +1469,16 @@ struct Strategy {
         //1.选定最好生成策略
         vector<vector<int>> curSamples;
         vector<SampleResult> results;
-        createBaseSamples(results, CREATE_BASE_SAMPLE_CANDIDATE_COUNT, CREATE_BASE_SAMPLES_MAX_TIME,
-                          CREATE_BASE_EDGE_CANDIDATE_COUNT, EVERY_SCENE_MAX_FAIL_EDGE_COUNT);
-        optimizeSamples(results);
-        int shouldValue = 0;
-        for (const SampleResult &result: results) {
-            curSamples.push_back(result.sample);
-            shouldValue += result.value;
-        }
-        printError("shouldValue:" + to_string(shouldValue));
-        printMeCreateSamples(curSamples);
+//        createBaseSamples(results, CREATE_BASE_SAMPLE_CANDIDATE_COUNT, CREATE_BASE_SAMPLES_MAX_TIME,
+//                          CREATE_BASE_EDGE_CANDIDATE_COUNT, EVERY_SCENE_MAX_FAIL_EDGE_COUNT);
+//        optimizeSamples(results);
+//        int shouldValue = 0;
+//        for (const SampleResult &result: results) {
+//            curSamples.push_back(result.sample);
+//            shouldValue += result.value;
+//        }
+//        printError("shouldValue:" + to_string(shouldValue));
+//        printMeCreateSamples(curSamples);
 //// 规划段 本地测试
 //        if (LOCAL_TEST_CREATE) {
 //            double myScore = 0, baseScore = 0;
@@ -1529,10 +1556,10 @@ struct Strategy {
                              min(int(edges.size()) / 5, EVERY_SCENE_MAX_FAIL_EDGE_COUNT)),
                          j + 1, false, false, true);
             }
-            if(maxCurLength!=INT_INF){
-                maxCurLength = max(maxCurLength,curLength);
-            }else{
-                maxCurLength=curLength;
+            if (maxCurLength != INT_INF) {
+                maxCurLength = max(maxCurLength, curLength);
+            } else {
+                maxCurLength = curLength;
             }
             int totalValue = 0;
             int remainValue = 0;
