@@ -146,7 +146,7 @@ struct Strategy {
     double resultScore[2]{}; //分数，0最大分数，1当前分数
     int totalResource = 0;//总体资源
     int remainResource = 0;//当前剩余资源
-    double totalEdgeValue = 0;//边上的总体价值，可以叠加
+    int totalEdgeValue = 0;//边上的总体价值，可以叠加
     double remainEdgeValue = 0;//剩余的边上的价值
     double remainEdgeSize = 0;//剩余存活的边数
     double curAffectEdgeValue = 0;//当前断边影响的边上的价值
@@ -1440,93 +1440,138 @@ struct Strategy {
 
 
         //1.选定最好生成策略
-        vector<SampleResult> results;
-        createBaseSamples(results, CREATE_BASE_SAMPLE_CANDIDATE_COUNT, CREATE_BASE_SAMPLES_MAX_TIME,
-                          CREATE_BASE_EDGE_CANDIDATE_COUNT, EVERY_SCENE_MAX_FAIL_EDGE_COUNT);
-        optimizeSamples(results);
         vector<vector<int>> curSamples;
-        int shouldValue = 0;
-        for (const SampleResult &result: results) {
-            curSamples.push_back(result.sample);
-            shouldValue += result.value;
-        }
-        printError("shouldValue:" + to_string(shouldValue));
-        printMeCreateSamples(curSamples);
-// 规划段 本地测试
-        if (LOCAL_TEST_CREATE) {
-            double myScore = 0, baseScore = 0;
-            int myValue = 0, baseValue = 0;
-            for (int i = 0; i < 2; i++) {
-                resultScore[1] = 0;
-                for (const auto &result: results) {
-                    auto &curSample = result.sample;
-                    vector<vector<Point>> curBusesResult = busesOriginResult;
-                    for (int k = 0; k < curSample.size(); k++) {
-                        int failEdgeId = curSample[k];
-                        int curLength = k + 1;
-                        if (i == 0) {
-                            dispatch(curBusesResult, failEdgeId, result.maxLength,
-                                     curLength, false, true, true);
-                        } else {
-                            dispatch(curBusesResult, failEdgeId, EVERY_SCENE_MAX_FAIL_EDGE_COUNT,
-                                     curLength, true, true, true);
-                        }
-                    }
-                    //邻接表
-                    int totalValue = 0;
-                    int remainValue = 0;
-                    for (int k = 1; k < buses.size(); k++) {
-                        totalValue += buses[k].value;
-                        if (!buses[k].die) {
-                            remainValue += buses[k].value;
-                        }
-                    }
-                    if (i == 0) {
-                        myValue += remainValue;
+        vector<SampleResult> results;
+//        createBaseSamples(results, CREATE_BASE_SAMPLE_CANDIDATE_COUNT, CREATE_BASE_SAMPLES_MAX_TIME,
+//                          CREATE_BASE_EDGE_CANDIDATE_COUNT, EVERY_SCENE_MAX_FAIL_EDGE_COUNT);
+//        optimizeSamples(results);
+//        int shouldValue = 0;
+//        for (const SampleResult &result: results) {
+//            curSamples.push_back(result.sample);
+//            shouldValue += result.value;
+//        }
+//        printError("shouldValue:" + to_string(shouldValue));
+//        printMeCreateSamples(curSamples);
+//// 规划段 本地测试
+//        if (LOCAL_TEST_CREATE) {
+//            double myScore = 0, baseScore = 0;
+//            int myValue = 0, baseValue = 0;
+//            for (int i = 0; i < 2; i++) {
+//                resultScore[1] = 0;
+//                for (const auto &result: results) {
+//                    auto &curSample = result.sample;
+//                    vector<vector<Point>> curBusesResult = busesOriginResult;
+//                    for (int k = 0; k < curSample.size(); k++) {
+//                        int failEdgeId = curSample[k];
+//                        int curLength = k + 1;
+//                        if (i == 0) {
+//                            dispatch(curBusesResult, failEdgeId, result.maxLength,
+//                                     curLength, false, true, true);
+//                        } else {
+//                            dispatch(curBusesResult, failEdgeId, EVERY_SCENE_MAX_FAIL_EDGE_COUNT,
+//                                     curLength, true, true, true);
+//                        }
+//                    }
+//                    //邻接表
+//                    int totalValue = 0;
+//                    int remainValue = 0;
+//                    for (int k = 1; k < buses.size(); k++) {
+//                        totalValue += buses[k].value;
+//                        if (!buses[k].die) {
+//                            remainValue += buses[k].value;
+//                        }
+//                    }
+//                    if (i == 0) {
+//                        myValue += remainValue;
+//
+//                    } else {
+//                        baseValue += remainValue;
+//                    }
+//                    resultScore[1] += 10000.0 * remainValue / totalValue;
+//                    reset();
+//                }
+//                if (i == 0) {
+//                    myScore = resultScore[1];
+//                } else {
+//                    baseScore = resultScore[1];
+//                }
+//            }
+//            resultScore[1] = (myScore - baseScore);
+//            printError(
+//                    "totalScore:" + to_string(curSamples.size() * 10000) + ",myScore:" +
+//                    to_string(myScore).substr(0, to_string(myScore).length() - 3) +
+//                    ",baseScore:" + to_string(baseScore).substr(0, to_string(baseScore).length() - 3) +
+//                    ",diffScore:" +
+//                    to_string(resultScore[1]).substr(0, to_string(resultScore[1]).length() - 3)
+//                    + ",value:" + to_string(myValue - baseValue));
+//
+//            return;
+//        }
 
-                    } else {
-                        baseValue += remainValue;
-                    }
-                    resultScore[1] += 10000.0 * remainValue / totalValue;
-                    reset();
-                }
-                if (i == 0) {
-                    myScore = resultScore[1];
-                } else {
-                    baseScore = resultScore[1];
-                }
-            }
-            resultScore[1] = (myScore - baseScore);
-            printError(
-                    "totalScore:" + to_string(curSamples.size() * 10000) + ",myScore:" +
-                    to_string(myScore).substr(0, to_string(myScore).length() - 3) +
-                    ",baseScore:" + to_string(baseScore).substr(0, to_string(baseScore).length() - 3) +
-                    ",diffScore:" +
-                    to_string(resultScore[1]).substr(0, to_string(resultScore[1]).length() - 3)
-                    + ",value:" + to_string(myValue - baseValue));
+//        int t;
+//        scanf("%d", &t);
+//        resultScore[0] = 10000.0 * t;
+//        int maxLength = INT_INF;//每一个测试场景的断边数，默认是无穷个，猜测每次都一样
+//        for (int i = 0; i < t; i++) {
+//            //邻接表
+//            vector<vector<Point>> curBusesResult = busesOriginResult;
+//            int curLength = 0;
+//            scanf("%d", &curLength);
+//            for (int j = 0; j < curLength; ++j) {
+//                int failEdgeId = -1;
+//                scanf("%d", &failEdgeId);
+//                if (failEdgeId == -1) {
+//                    break;
+//                }
+//                dispatch(curBusesResult, failEdgeId, curLength,
+//                         j + 1, false, false, true);
+//            }
+//            maxLength = curLength;
+//            int totalValue = 0;
+//            int remainValue = 0;
+//            for (int j = 1; j < buses.size(); j++) {
+//                totalValue += buses[j].value;
+//                if (!buses[j].die) {
+//                    remainValue += buses[j].value;
+//                }
+//            }
+//            resultScore[1] += 10000.0 * remainValue / totalValue;
+//            reset();
+//        }
 
-            return;
-        }
 
+//      实际线上
         int t;
         scanf("%d", &t);
         resultScore[0] = 10000.0 * t;
-        int maxLength = INT_INF;//每一个测试场景的断边数，默认是无穷个，猜测每次都一样
+        int maxCurLength = INT_INF;//假设每次断边一样长？？？
         for (int i = 0; i < t; i++) {
             //邻接表
             vector<vector<Point>> curBusesResult = busesOriginResult;
             int curLength = 0;
-            scanf("%d", &curLength);
-            for (int j = 0; j < curLength; ++j) {
+            while (true) {
                 int failEdgeId = -1;
                 scanf("%d", &failEdgeId);
                 if (failEdgeId == -1) {
                     break;
                 }
-                dispatch(curBusesResult, failEdgeId, curLength,
-                         j + 1, false, false, true);
+                curLength++;
+                if (i < curSamples.size()) {
+                    dispatch(curBusesResult, failEdgeId, results[i].maxLength,
+                             curLength, false, true, true);
+                } else {
+                    //min(int(edges.size()) / 5, EVERY_SCENE_MAX_FAIL_EDGE_COUNT)
+                    dispatch(curBusesResult, failEdgeId,
+                             min(maxCurLength, min(int(edges.size()) / 5, EVERY_SCENE_MAX_FAIL_EDGE_COUNT))
+                             ,
+                             curLength, false, false, true);
+                }
             }
-            maxLength = curLength;
+            if(maxCurLength!=INT_INF){
+                maxCurLength = max(maxCurLength,curLength);
+            }else{
+                maxCurLength=curLength;
+            }
             int totalValue = 0;
             int remainValue = 0;
             for (int j = 1; j < buses.size(); j++) {
