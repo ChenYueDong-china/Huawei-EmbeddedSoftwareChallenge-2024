@@ -43,7 +43,7 @@ const int EVERY_SCENE_MAX_FAIL_EDGE_COUNT = 60;//一个场景场景最大断边�
 //迭代参数
 const int SEARCH_RANDOM_SEED = 666;//搜索种子
 static bool IS_ONLINE = false;//使劲迭代人家的，留1s阈值
-int CHANGE_CHANNEL_WEIGHT = 300;//变通道权重
+int CHANGE_CHANNEL_WEIGHT = 1;//变通道权重
 const int EDGE_LENGTH_WEIGHT = 100;//边的权重
 
 
@@ -148,6 +148,10 @@ struct Strategy {
     double resultScore[2]{};
     int totalResource = 0;//初始状态剩余的资源
     int remainResource = 0;//初始状态剩余的资源
+    double totalEdgeValue = 0;//平均断一条边影响的价值
+    double remainEdgeValue = 0;//平均断一条边影响的价值
+    double remainEdgeSize = 0;//平均断一条边影响的价值
+    double curAffectEdgeValue = 0;//平均断一条边影响的价值
     double avgEdgeAffectValue = 0;//平均断一条边影响的价值
     int createScores[MAX_M + 1]{};//基础分
     vector<vector<int>> baseRepValue[MAX_M + 1];//断掉应该增加的分
@@ -221,7 +225,7 @@ struct Strategy {
         inline static vector<Point>
         aStar(const int start, const int end, const int width, const vector<NearEdge> searchGraph[MAX_N + 1],
               const vector<Edge> &edges, const vector<Vertex> &vertices,
-              const int minDistance[MAX_N + 1][MAX_N + 1], int maxResource) {
+              const int minDistance[MAX_N + 1][MAX_N + 1], const int maxResource) {
 
             static bitset<MAX_N + 1> parentVertexes[MAX_N + 1][CHANNEL_COUNT + 1];
             static int timestamp[MAX_N + 1][CHANNEL_COUNT + 1], dist[MAX_N + 1][CHANNEL_COUNT + 1]
@@ -270,7 +274,7 @@ struct Strategy {
                             continue;//不空闲直接结束
                         }
                         const int startChannel = lastChannel;
-                        int nextDistance = lastDeep + width * EDGE_LENGTH_WEIGHT;//不用变通道
+                        const int nextDistance = lastDeep + width * EDGE_LENGTH_WEIGHT;//不用变通道
                         if (timestamp[next][startChannel] == timestampId &&
                             dist[next][startChannel] <= nextDistance) {
                             //访问过了，且距离没变得更近
@@ -387,6 +391,8 @@ struct Strategy {
             Business &bus = buses[i];
             remainResource -= calculatesResource(busesOriginResult[bus.id]);
         }
+        remainEdgeValue = totalEdgeValue;
+        remainEdgeSize = int(edges.size()) - 1;
     }
 
     //获得路径经过的变通道顶点
@@ -531,22 +537,35 @@ struct Strategy {
         undoBusiness(business, originPath, {});
 
 
-        //方式1,求出剩余需要救的价值
-        double remainNeedHelpValue = avgEdgeAffectValue * max(min(maxLength, int(edges.size()) - 1) - curLength + 1, 1);
-        double factor = test ? MY_SAMPLE_SEARCH_RESOURCE_FACTOR : OTHER_SAMPLE_SEARCH_RESOURCE_FACTOR;
-        int extraResource = (int) round(factor * (1.0 * business.value / remainNeedHelpValue) * remainResource);
-        if (maxLength == curLength) {
-            extraResource = INT_INF / 2;
-        }
 
-        //方式2
+        //方式1,资源法
+        // 1.当前剩余的边价值除以剩余的边，边较少效果好
+        double remainNeedHelpValue =
+                (remainEdgeValue / remainEdgeSize) * max(min(maxLength, int(edges.size()) - 1) - curLength + 1, 1);
+        // 2.最开始的边价值除以全部边，边较多效果好
+        //double remainNeedHelpValue = avgEdgeAffectValue * max(min(maxLength, int(edges.size()) - 1) - curLength + 1, 1);
+        // 3.考虑用当前影响的边价值当作平均影响价值？
+        //double remainNeedHelpValue = curAffectEdgeValue * max(min(maxLength, int(edges.size()) - 1) - curLength + 1, 1);
+
+
+        // 缩放因子，一般为1-1.5，因为可能死亡业务不占据资源？可以给更多资源，自己的样例和他的样例分开来
+        double factor = test ? MY_SAMPLE_SEARCH_RESOURCE_FACTOR : OTHER_SAMPLE_SEARCH_RESOURCE_FACTOR;
+
+        int extraResource = (int) round(factor * (1.0 * business.value / remainNeedHelpValue) * remainResource);
+
+        //4.固定不超过1.6倍
         //int extraResource = (int) round(max(EDGE_LENGTH_WEIGHT * business.needChannelLength * 6.0, originResource * 1.6));
 
 
+        if (maxLength == curLength) {
+            //最后一次断边，拉满资源
+            extraResource = INT_INF / 2;
+        }
+
         int l1 = runtime();
         vector<Point> path = SearchUtils::aStar(from, to, width,
-                                                searchGraph, edges, vertices, minDistance,
-                                                originResource + extraResource);
+                                                 searchGraph, edges, vertices, minDistance,
+                                                 originResource + extraResource);
         int r1 = runtime();
         searchTime += r1 - l1;
         redoBusiness(business, originPath, {});
@@ -585,6 +604,7 @@ struct Strategy {
     //把全部需要增加上的新路径增加进去，并且回收老路径
     void redoResult(vector<int> &affectBusinesses, unordered_map<int, vector<Point>> &result,
                     vector<vector<Point>> &curBusesResult, bool onlyOne) {
+        remainEdgeSize--;
         for (const auto &entry: result) {
             int id = entry.first;
             const vector<Point> &newPath = entry.second;
@@ -594,6 +614,8 @@ struct Strategy {
             if (!onlyOne) {
                 redoBusiness(business, newPath, originPath);
             }
+            remainEdgeValue -= int(originPath.size()) * business.value;
+            remainEdgeValue += int(newPath.size()) * business.value;
             //未错误，误报
             undoBusiness(business, originPath, newPath);
             remainResource += calculatesResource(originPath);
@@ -605,6 +627,7 @@ struct Strategy {
         for (const int &id: affectBusinesses) {
             Business &business = buses[id];
             if (!result.count(business.id)) {
+                remainEdgeValue -= int(curBusesResult[id].size()) * business.value;
                 business.die = true;//死掉了，以后不调度
             }
         }
@@ -704,6 +727,7 @@ struct Strategy {
 
         //1.求受影响的业务
         vector<int> affectBusinesses;
+        curAffectEdgeValue = 0;
         for (int busId: edges[failEdgeId].channel) {
             if (busId != -1 && !buses[busId].die) {
                 assert(buses[busId].id == busId);
@@ -711,6 +735,7 @@ struct Strategy {
                                                  == busId) {
                     continue;
                 }
+                curAffectEdgeValue += buses[busId].value;
                 affectBusinesses.push_back(busId);
             }
         }
@@ -874,10 +899,18 @@ struct Strategy {
 
         //调整变通道权重
         int totalChangeCount = 0;
+        int ownCount = 0;
         for (int i = 1; i < vertices.size(); i++) {
             Vertex &vertex = vertices[i];
             totalChangeCount += vertex.maxChangeCount;
+            if (vertex.maxChangeCount > 0) {
+                ownCount++;
+            }
         }
+        //1考虑拥有能力个数，和总共个数去调整
+//        CHANGE_CHANNEL_WEIGHT = EDGE_LENGTH_WEIGHT * (int(vertices.size()) - 1) *
+//                                (int(edges.size()) - 1) / ownCount / totalChangeCount;
+        //2只考虑总共个数
         //CHANGE_CHANNEL_WEIGHT = EDGE_LENGTH_WEIGHT * (int(edges.size()) - 1) * 2 / totalChangeCount;
 
 
@@ -895,7 +928,6 @@ struct Strategy {
             Business &bus = buses[i];
             remainResource -= calculatesResource(busesOriginResult[bus.id]);
         }
-        int totalEdgeValue = 0;
         for (int i = 1; i < edges.size(); i++) {
             for (int j = 1; j <= CHANNEL_COUNT; j++) {
                 if (edges[i].channel[j] != -1 && edges[i].channel[j] != edges[i].channel[j - 1]) {
@@ -903,8 +935,9 @@ struct Strategy {
                 }
             }
         }
+        remainEdgeValue = totalEdgeValue;
+        remainEdgeSize = int(edges.size()) - 1;
         avgEdgeAffectValue = 1.0 * totalEdgeValue / (int(edges.size()) - 1);
-
 
         //每个通道变现的价值
         for (int i = 1; i < edges.size(); i++) {
@@ -912,6 +945,10 @@ struct Strategy {
             edges[i].die = true;
             double baseValue = 0;
             double meValue = 0;
+            curAffectEdgeValue = 0;
+            for (const auto &id: ids) {
+                curAffectEdgeValue += buses[id].value;
+            }
             for (int id: ids) {
                 const vector<Point> &originPath = busesOriginResult[id];
                 Business &business = buses[id];
