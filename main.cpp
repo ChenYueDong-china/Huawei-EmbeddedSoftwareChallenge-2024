@@ -43,7 +43,8 @@ const int EVERY_SCENE_MAX_FAIL_EDGE_COUNT = 60;//一个场景场景最大断边�
 //迭代参数
 const int SEARCH_RANDOM_SEED = 666;//搜索种子
 static bool IS_ONLINE = false;//是否线上，可以充分利用时间迭代他给的样例
-int CHANGE_CHANNEL_WEIGHT = 300;//变通道权重，最好init直接动态调整好一点，定死效果不太好
+int MY_CHANGE_CHANNEL_WEIGHT = 1;//我的用力寻路变通道权重，也用来计算资源，最好init直接动态调整好一点，定死效果不太好
+int OTHER_CHANGE_CHANNEL_WEIGHT = 1;//他的样例变通道权重，只是寻路用，最好init直接动态调整好一点，定死效果不太好
 const int EDGE_LENGTH_WEIGHT = 100;//边的权重，基本可以不改变
 
 
@@ -225,7 +226,7 @@ struct Strategy {
         inline static vector<Point>
         aStar(const int start, const int end, const int width, const vector<NearEdge> searchGraph[MAX_N + 1],
               const vector<Edge> &edges, const vector<Vertex> &vertices,
-              const int minDistance[MAX_N + 1][MAX_N + 1], const int maxResource) {
+              const int minDistance[MAX_N + 1][MAX_N + 1], const int maxResource, const int changeChannelWeight) {
 
             static bitset<MAX_N + 1> parentVertexes[MAX_N + 1][CHANNEL_COUNT + 1];
             static int timestamp[MAX_N + 1][CHANNEL_COUNT + 1], dist[MAX_N + 1][CHANNEL_COUNT + 1]
@@ -298,7 +299,7 @@ struct Strategy {
                             //用来穷举
                             int nextDistance = lastDeep + width * EDGE_LENGTH_WEIGHT;
                             if (startChannel != lastChannel) {
-                                nextDistance += CHANGE_CHANNEL_WEIGHT;//变通道距离加1
+                                nextDistance += changeChannelWeight;//变通道距离加1
                             }
                             if (timestamp[next][startChannel] == timestampId &&
                                 dist[next][startChannel] <= nextDistance) {
@@ -564,9 +565,10 @@ struct Strategy {
         }
 
         int l1 = runtime();
+        int changeChannelWeight = test ? MY_CHANGE_CHANNEL_WEIGHT : OTHER_CHANGE_CHANNEL_WEIGHT;
         vector<Point> path = SearchUtils::aStar(from, to, width,
                                                 searchGraph, edges, vertices, minDistance,
-                                                originResource + extraResource);
+                                                originResource + extraResource, changeChannelWeight);
         int r1 = runtime();
         searchTime += r1 - l1;
         if (findRedo || path.empty()) {
@@ -859,7 +861,7 @@ struct Strategy {
         for (int i = 0; i < path.size(); i++) {
             channelResource += EDGE_LENGTH_WEIGHT * (path[i].endChannelId - path[i].startChannelId + 1);
             if (i >= 1 && path[i - 1].startChannelId != path[i].startChannelId) {
-                changChannelResource += CHANGE_CHANNEL_WEIGHT;
+                changChannelResource += MY_CHANGE_CHANNEL_WEIGHT;
             }
         }
         return channelResource + changChannelResource;
@@ -954,10 +956,15 @@ struct Strategy {
             }
         }
         //1考虑拥有能力个数，和总共个数去调整
-//        CHANGE_CHANNEL_WEIGHT = EDGE_LENGTH_WEIGHT * (int(vertices.size()) - 1) *
-//                                (int(edges.size()) - 1) / ownCount / totalChangeCount;
+        //我的样例，和他的样例可能weight不太一样
+        MY_CHANGE_CHANNEL_WEIGHT = max(1, EDGE_LENGTH_WEIGHT * (int(vertices.size()) - 1) /
+                                          ownCount);
+
+        //
+        OTHER_CHANGE_CHANNEL_WEIGHT = max(1, EDGE_LENGTH_WEIGHT * (int(vertices.size()) - 1) /
+                                             ownCount / 2);
         //2只考虑总共个数
-        //CHANGE_CHANNEL_WEIGHT = EDGE_LENGTH_WEIGHT * (int(edges.size()) - 1) * 2 / totalChangeCount;
+        //MY_CHANGE_CHANNEL_WEIGHT = EDGE_LENGTH_WEIGHT * (int(edges.size()) - 1) * 2 / totalChangeCount;
 
 
         //计算整体资源,通道资源，加变通道资源
@@ -966,7 +973,7 @@ struct Strategy {
         }
         for (int i = 1; i < vertices.size(); i++) {
             Vertex &vertex = vertices[i];
-            totalResource += CHANGE_CHANNEL_WEIGHT * vertex.maxChangeCount;
+            totalResource += MY_CHANGE_CHANNEL_WEIGHT * vertex.maxChangeCount;
         }
 
         remainResource = totalResource;
@@ -1493,8 +1500,8 @@ struct Strategy {
 
 
         //1.选定最好生成策略
-        vector<vector<int>> curSamples;
-        vector<SampleResult> results;
+//        vector<vector<int>> curSamples;
+//        vector<SampleResult> results;
 //        createBaseSamples(results, CREATE_BASE_SAMPLE_CANDIDATE_COUNT, CREATE_BASE_SAMPLES_MAX_TIME,
 //                          CREATE_BASE_EDGE_CANDIDATE_COUNT, EVERY_SCENE_MAX_FAIL_EDGE_COUNT);
 //        optimizeSamples(results);
@@ -1579,7 +1586,7 @@ struct Strategy {
                 //min(int(edges.size()) / 5, EVERY_SCENE_MAX_FAIL_EDGE_COUNT)
                 //min(maxCurLength,min(int(edges.size()) / 5, EVERY_SCENE_MAX_FAIL_EDGE_COUNT))
                 dispatch(curBusesResult, failEdgeId,
-                         curLength,
+                         min(maxCurLength, min(int(edges.size()) / 5, EVERY_SCENE_MAX_FAIL_EDGE_COUNT)),
                          j + 1, false, false, true);
             }
             if (maxCurLength != INT_INF) {
