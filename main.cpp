@@ -1416,10 +1416,10 @@ struct Strategy {
                     tmpSamples.push_back(results[i].sample);
                 }
             }
-            int curCreateLength = minSampleLength + int(createSampleRad() % (maxSampleLength -
-                                                                             minSampleLength + 2));
             int noBetterCount = 0;
             while (noBetterCount < 2 * CREATE_SAMPLE_COUNT * CREATE_OPTIMIZE_SAMPLE_CANDIDATE_COUNT) {
+                int curCreateLength = minSampleLength + int(createSampleRad() % (maxSampleLength -
+                                                                                 minSampleLength + 2));
                 vector<vector<int>> candidateSamples = myGenerate(tmpSamples,
                                                                   curCreateLength,
                                                                   CREATE_OPTIMIZE_EDGE_CANDIDATE_COUNT,
@@ -1662,7 +1662,7 @@ int main() {
         string path = "../data/";
 //        MAX_E_FAIL_COUNT = 12000;
         double totalScore = 0;
-        for (int i = 3; i < 4; i++) {
+        for (int i = 0; i < 1; i++) {
             int start = runtime();
             freopen((path + to_string(i) + "/in.txt").c_str(), "r", stdin);
             freopen((path + to_string(i) + "/out.txt").c_str(), "w", stdout);
