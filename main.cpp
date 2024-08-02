@@ -1469,9 +1469,10 @@ struct Strategy {
         vector<SampleResult> bestResult = results;
         for (int i = 1; i < bestResult.size(); i++) {
             int initLength = EVERY_SCENE_MAX_FAIL_EDGE_COUNT;
-            int popCount = int(createSampleRad() % 2) == 0 ? 1 : 2;
+            //int popCount = int(createSampleRad() % 2) == 0 ? 1 : 2;
+            int popCount = 1;
             vector<SampleResult> curResults = bestResult;
-            for (int j = 0; j <= i; j++) {
+            for (int j = 0; j <= popCount; j++) {
                 curResults.pop_back();
             }
 
