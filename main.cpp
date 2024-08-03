@@ -27,7 +27,7 @@ const int CREATE_BASE_EDGE_CANDIDATE_COUNT = 15;//基础序列生成，候选边
 const int CREATE_OPTIMIZE_EDGE_CANDIDATE_COUNT = 20;//优化基础序列，候选边的条数
 const int CREATE_SHUFFLE_MAX_TRY_COUNT = 5;//不满足相似度约束时，最多尝试几次？
 const int CREATE_BASE_SAMPLES_MAX_TIME = 20 * 1000;//基础序列生成，最大运行时间
-const int CREATE_OPTIMIZE_SAMPLES_MAX_TIME = CREATE_BASE_SAMPLES_MAX_TIME + 61 * 1000;//优化基础序列，最大运行时间
+const int CREATE_OPTIMIZE_SAMPLES_MAX_TIME = CREATE_BASE_SAMPLES_MAX_TIME + 50 * 1000;//优化基础序列，最大运行时间
 
 
 const double MY_SAMPLE_SEARCH_RESOURCE_FACTOR = 1.0;//创建我自己样例的寻路因子
@@ -1007,7 +1007,7 @@ struct Strategy {
         //3.循环调度,求出最优解保存
         unordered_map<int, vector<Point>> bestResult;
         double bestScore = -1;
-        int remainTime = (int) (SEARCH_TIME - 1000 - int(runtime()));//留1s阈值
+        int remainTime = (int) (SEARCH_TIME - 1500 - int(runtime()));//留1s阈值
         int remainMaxCount = max(1, MAX_E_FAIL_COUNT - curHandleCount + 1);
         int maxRunTime = remainTime / remainMaxCount;
         int tmpRemainResource = remainResource;
