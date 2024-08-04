@@ -12,14 +12,12 @@
 #include <cassert>
 #include <algorithm>
 #include <map>
-#include <stack>
 #include <cstring>
 #include <bitset>
 
 using namespace std;
 
 //创建参数
-static bool LOCAL_TEST_CREATE = true;//线上改为false
 const int CREATE_SAMPLE_RANDOM_SEED = 666;//创建样例种子
 const int CREATE_BASE_SAMPLE_CANDIDATE_COUNT = 8;//基础序列生成，候选序列个数
 const int CREATE_OPTIMIZE_SAMPLE_CANDIDATE_COUNT = 3;//优化基础序列，候选序列个数
@@ -29,16 +27,13 @@ const int CREATE_SHUFFLE_MAX_TRY_COUNT = 5;//不满足相似度约束时，最�
 const int CREATE_BASE_SAMPLES_MAX_TIME = 40 * 1000;//基础序列生成，最大运行时间
 const int CREATE_OPTIMIZE_SAMPLES_MAX_TIME = CREATE_BASE_SAMPLES_MAX_TIME + 45 * 1000;//优化基础序列，最大运行时间
 
-
 const double MY_SAMPLE_SEARCH_RESOURCE_FACTOR = 1.0;//创建我自己样例的寻路因子
 const double OTHER_SAMPLE_SEARCH_RESOURCE_FACTOR = 1.0;//优化其他样例的寻路因子
-
 
 //创建常量
 const int CREATE_SAMPLE_COUNT = 30;//创建样例最大个数
 const double CREATE_SAMPLE_SIMILARITY_THRESHOLD = 0.5;//相似度约束
 const int EVERY_SCENE_MAX_FAIL_EDGE_COUNT = 60;//一个场景场景最大断边数
-
 
 //迭代参数
 const int SEARCH_RANDOM_SEED = 666;//搜索种子
@@ -46,7 +41,6 @@ static bool IS_ONLINE = true;//是否线上，可以充分利用时间迭代他�
 int MY_CHANGE_CHANNEL_WEIGHT = 1;//我的用力寻路变通道权重，也用来计算资源，最好init直接动态调整好一点，定死效果不太好
 int OTHER_CHANGE_CHANNEL_WEIGHT = 1;//他的样例变通道权重，只是寻路用，最好init直接动态调整好一点，定死效果不太好
 const int EDGE_LENGTH_WEIGHT = 100;//边的权重，基本可以不改变
-
 
 //搜索常量
 static int MAX_E_FAIL_COUNT = 4200;//他的的样例的最大断边数，最大断边数5k
@@ -59,17 +53,10 @@ const int CHANNEL_COUNT = 40;
 const auto programStartTime = std::chrono::steady_clock::now();
 const int INT_INF = 0x7f7f7f7f;
 
-int time9 = 0;
-
 inline int runtime() {
     auto now = std::chrono::steady_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(now - programStartTime);
     return int(duration.count());
-}
-
-inline void printError(const string &s) {
-    fprintf(stderr, "%s\n", s.c_str());
-    fflush(stderr);
 }
 
 //边
