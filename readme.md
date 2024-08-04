@@ -41,4 +41,4 @@ https://github.com/ChenYueDong-china/Huawei-EmbeddedSoftwareChallenge-2024.git
 
 #### 注意
 
-版权属于华为，侵权删除。
+版权属于华为，侵权删除
